@@ -95,7 +95,7 @@ class AnthropicModelComponent(LCModelComponent):
 
     def get_models(self, tool_model_enabled: bool | None = None) -> list[str]:
         try:
-            import anthropic
+            import langflow.components.models.anthropic as anthropic
 
             client = anthropic.Anthropic(api_key=self.api_key)
             models = client.models.list(limit=20).data
@@ -129,7 +129,7 @@ class AnthropicModelComponent(LCModelComponent):
             str: The message from the exception.
         """
         try:
-            from anthropic import BadRequestError
+            from langflow.components.models.anthropic import BadRequestError
         except ImportError:
             return None
         if isinstance(exception, BadRequestError):

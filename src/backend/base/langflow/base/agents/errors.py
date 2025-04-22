@@ -1,4 +1,4 @@
-from anthropic import BadRequestError as AnthropicBadRequestError
+from langflow.components.models.anthropic import BadRequestError as AnthropicBadRequestError
 from cohere import BadRequestError as CohereBadRequestError
 from httpx import HTTPStatusError
 

@@ -1,14 +1,14 @@
 from typing_extensions import TypedDict
 
 from langflow.base.models.model import LCModelComponent
-from langflow.components.amazon.amazon_bedrock_model import AmazonBedrockComponent
-from langflow.components.models.anthropic import AnthropicModelComponent
+# from langflow.components.amazon.amazon_bedrock_model import AmazonBedrockComponent
+# from langflow.components.models.anthropic import AnthropicModelComponent
 from langflow.components.models.azure_openai import AzureChatOpenAIComponent
-from langflow.components.models.google_generative_ai import GoogleGenerativeAIComponent
-from langflow.components.models.groq import GroqModel
-from langflow.components.models.nvidia import NVIDIAModelComponent
-from langflow.components.models.openai_chat_model import OpenAIModelComponent
-from langflow.components.models.sambanova import SambaNovaComponent
+# from langflow.components.models.google_generative_ai import GoogleGenerativeAIComponent
+# from langflow.components.models.groq import GroqModel
+# from langflow.components.models.nvidia import NVIDIAModelComponent
+# from langflow.components.models.openai_chat_model import OpenAIModelComponent
+# from langflow.components.models.sambanova import SambaNovaComponent
 from langflow.inputs.inputs import InputTypes, SecretStrInput
 from langflow.template.field.base import Input
 
@@ -69,31 +69,6 @@ def create_input_fields_dict(inputs: list[Input], prefix: str) -> dict[str, Inpu
     return {f"{prefix}{input_.name}": input_.to_dict() for input_ in inputs}
 
 
-def _get_google_generative_ai_inputs_and_fields():
-    try:
-        from langflow.components.models.google_generative_ai import GoogleGenerativeAIComponent
-
-        google_generative_ai_inputs = get_filtered_inputs(GoogleGenerativeAIComponent)
-    except ImportError as e:
-        msg = (
-            "Google Generative AI is not installed. Please install it with "
-            "`pip install langchain-google-generative-ai`."
-        )
-        raise ImportError(msg) from e
-    return google_generative_ai_inputs, create_input_fields_dict(google_generative_ai_inputs, "")
-
-
-def _get_openai_inputs_and_fields():
-    try:
-        from langflow.components.models.openai_chat_model import OpenAIModelComponent
-
-        openai_inputs = get_filtered_inputs(OpenAIModelComponent)
-    except ImportError as e:
-        msg = "OpenAI is not installed. Please install it with `pip install langchain-openai`."
-        raise ImportError(msg) from e
-    return openai_inputs, create_input_fields_dict(openai_inputs, "")
-
-
 def _get_azure_inputs_and_fields():
     try:
         from langflow.components.models.azure_openai import AzureChatOpenAIComponent
@@ -105,75 +80,87 @@ def _get_azure_inputs_and_fields():
     return azure_inputs, create_input_fields_dict(azure_inputs, "")
 
 
-def _get_groq_inputs_and_fields():
-    try:
-        from langflow.components.models.groq import GroqModel
+# def _get_google_generative_ai_inputs_and_fields():
+#     try:
+#         from langflow.components.models.google_generative_ai import GoogleGenerativeAIComponent
 
-        groq_inputs = get_filtered_inputs(GroqModel)
-    except ImportError as e:
-        msg = "Groq is not installed. Please install it with `pip install langchain-groq`."
-        raise ImportError(msg) from e
-    return groq_inputs, create_input_fields_dict(groq_inputs, "")
-
-
-def _get_anthropic_inputs_and_fields():
-    try:
-        from langflow.components.models.anthropic import AnthropicModelComponent
-
-        anthropic_inputs = get_filtered_inputs(AnthropicModelComponent)
-    except ImportError as e:
-        msg = "Anthropic is not installed. Please install it with `pip install langchain-anthropic`."
-        raise ImportError(msg) from e
-    return anthropic_inputs, create_input_fields_dict(anthropic_inputs, "")
+#         google_generative_ai_inputs = get_filtered_inputs(GoogleGenerativeAIComponent)
+#     except ImportError as e:
+#         msg = (
+#             "Google Generative AI is not installed. Please install it with "
+#             "`pip install langchain-google-generative-ai`."
+#         )
+#         raise ImportError(msg) from e
+#     return google_generative_ai_inputs, create_input_fields_dict(google_generative_ai_inputs, "")
 
 
-def _get_nvidia_inputs_and_fields():
-    try:
-        from langflow.components.models.nvidia import NVIDIAModelComponent
+# def _get_openai_inputs_and_fields():
+#     try:
+#         from langflow.components.models.openai_chat_model import OpenAIModelComponent
 
-        nvidia_inputs = get_filtered_inputs(NVIDIAModelComponent)
-    except ImportError as e:
-        msg = "NVIDIA is not installed. Please install it with `pip install langchain-nvidia`."
-        raise ImportError(msg) from e
-    return nvidia_inputs, create_input_fields_dict(nvidia_inputs, "")
-
-
-def _get_amazon_bedrock_inputs_and_fields():
-    try:
-        from langflow.components.amazon.amazon_bedrock_model import AmazonBedrockComponent
-
-        amazon_bedrock_inputs = get_filtered_inputs(AmazonBedrockComponent)
-    except ImportError as e:
-        msg = "Amazon Bedrock is not installed. Please install it with `pip install langchain-amazon-bedrock`."
-        raise ImportError(msg) from e
-    return amazon_bedrock_inputs, create_input_fields_dict(amazon_bedrock_inputs, "")
+#         openai_inputs = get_filtered_inputs(OpenAIModelComponent)
+#     except ImportError as e:
+#         msg = "OpenAI is not installed. Please install it with `pip install langchain-openai`."
+#         raise ImportError(msg) from e
+#     return openai_inputs, create_input_fields_dict(openai_inputs, "")
 
 
-def _get_sambanova_inputs_and_fields():
-    try:
-        from langflow.components.models.sambanova import SambaNovaComponent
+# def _get_groq_inputs_and_fields():
+#     try:
+#         from langflow.components.models.groq import GroqModel
 
-        sambanova_inputs = get_filtered_inputs(SambaNovaComponent)
-    except ImportError as e:
-        msg = "SambaNova is not installed. Please install it with `pip install langchain-sambanova`."
-        raise ImportError(msg) from e
-    return sambanova_inputs, create_input_fields_dict(sambanova_inputs, "")
+#         groq_inputs = get_filtered_inputs(GroqModel)
+#     except ImportError as e:
+#         msg = "Groq is not installed. Please install it with `pip install langchain-groq`."
+#         raise ImportError(msg) from e
+#     return groq_inputs, create_input_fields_dict(groq_inputs, "")
+
+
+# def _get_anthropic_inputs_and_fields():
+#     try:
+#         from langflow.components.models.anthropic import AnthropicModelComponent
+
+#         anthropic_inputs = get_filtered_inputs(AnthropicModelComponent)
+#     except ImportError as e:
+#         msg = "Anthropic is not installed. Please install it with `pip install langchain-anthropic`."
+#         raise ImportError(msg) from e
+#     return anthropic_inputs, create_input_fields_dict(anthropic_inputs, "")
+
+
+# def _get_nvidia_inputs_and_fields():
+#     try:
+#         from langflow.components.models.nvidia import NVIDIAModelComponent
+
+#         nvidia_inputs = get_filtered_inputs(NVIDIAModelComponent)
+#     except ImportError as e:
+#         msg = "NVIDIA is not installed. Please install it with `pip install langchain-nvidia`."
+#         raise ImportError(msg) from e
+#     return nvidia_inputs, create_input_fields_dict(nvidia_inputs, "")
+
+
+# def _get_amazon_bedrock_inputs_and_fields():
+#     try:
+#         from langflow.components.amazon.amazon_bedrock_model import AmazonBedrockComponent
+
+#         amazon_bedrock_inputs = get_filtered_inputs(AmazonBedrockComponent)
+#     except ImportError as e:
+#         msg = "Amazon Bedrock is not installed. Please install it with `pip install langchain-amazon-bedrock`."
+#         raise ImportError(msg) from e
+#     return amazon_bedrock_inputs, create_input_fields_dict(amazon_bedrock_inputs, "")
+
+
+# def _get_sambanova_inputs_and_fields():
+#     try:
+#         from langflow.components.models.sambanova import SambaNovaComponent
+
+#         sambanova_inputs = get_filtered_inputs(SambaNovaComponent)
+#     except ImportError as e:
+#         msg = "SambaNova is not installed. Please install it with `pip install langchain-sambanova`."
+#         raise ImportError(msg) from e
+#     return sambanova_inputs, create_input_fields_dict(sambanova_inputs, "")
 
 
 MODEL_PROVIDERS_DICT: dict[str, ModelProvidersDict] = {}
-
-# Try to add each provider
-try:
-    openai_inputs, openai_fields = _get_openai_inputs_and_fields()
-    MODEL_PROVIDERS_DICT["OpenAI"] = {
-        "fields": openai_fields,
-        "inputs": openai_inputs,
-        "prefix": "",
-        "component_class": OpenAIModelComponent(),
-        "icon": OpenAIModelComponent.icon,
-    }
-except ImportError:
-    pass
 
 try:
     azure_inputs, azure_fields = _get_azure_inputs_and_fields()
@@ -187,77 +174,92 @@ try:
 except ImportError:
     pass
 
-try:
-    groq_inputs, groq_fields = _get_groq_inputs_and_fields()
-    MODEL_PROVIDERS_DICT["Groq"] = {
-        "fields": groq_fields,
-        "inputs": groq_inputs,
-        "prefix": "",
-        "component_class": GroqModel(),
-        "icon": GroqModel.icon,
-    }
-except ImportError:
-    pass
 
-try:
-    anthropic_inputs, anthropic_fields = _get_anthropic_inputs_and_fields()
-    MODEL_PROVIDERS_DICT["Anthropic"] = {
-        "fields": anthropic_fields,
-        "inputs": anthropic_inputs,
-        "prefix": "",
-        "component_class": AnthropicModelComponent(),
-        "icon": AnthropicModelComponent.icon,
-    }
-except ImportError:
-    pass
+# # Try to add each provider
+# try:
+#     openai_inputs, openai_fields = _get_openai_inputs_and_fields()
+#     MODEL_PROVIDERS_DICT["OpenAI"] = {
+#         "fields": openai_fields,
+#         "inputs": openai_inputs,
+#         "prefix": "",
+#         "component_class": OpenAIModelComponent(),
+#         "icon": OpenAIModelComponent.icon,
+#     }
+# except ImportError:
+#     pass
 
-try:
-    nvidia_inputs, nvidia_fields = _get_nvidia_inputs_and_fields()
-    MODEL_PROVIDERS_DICT["NVIDIA"] = {
-        "fields": nvidia_fields,
-        "inputs": nvidia_inputs,
-        "prefix": "",
-        "component_class": NVIDIAModelComponent(),
-        "icon": NVIDIAModelComponent.icon,
-    }
-except ImportError:
-    pass
 
-try:
-    bedrock_inputs, bedrock_fields = _get_amazon_bedrock_inputs_and_fields()
-    MODEL_PROVIDERS_DICT["Amazon Bedrock"] = {
-        "fields": bedrock_fields,
-        "inputs": bedrock_inputs,
-        "prefix": "",
-        "component_class": AmazonBedrockComponent(),
-        "icon": AmazonBedrockComponent.icon,
-    }
-except ImportError:
-    pass
+# try:
+#     groq_inputs, groq_fields = _get_groq_inputs_and_fields()
+#     MODEL_PROVIDERS_DICT["Groq"] = {
+#         "fields": groq_fields,
+#         "inputs": groq_inputs,
+#         "prefix": "",
+#         "component_class": GroqModel(),
+#         "icon": GroqModel.icon,
+#     }
+# except ImportError:
+#     pass
 
-try:
-    google_generative_ai_inputs, google_generative_ai_fields = _get_google_generative_ai_inputs_and_fields()
-    MODEL_PROVIDERS_DICT["Google Generative AI"] = {
-        "fields": google_generative_ai_fields,
-        "inputs": google_generative_ai_inputs,
-        "prefix": "",
-        "component_class": GoogleGenerativeAIComponent(),
-        "icon": GoogleGenerativeAIComponent.icon,
-    }
-except ImportError:
-    pass
+# try:
+#     anthropic_inputs, anthropic_fields = _get_anthropic_inputs_and_fields()
+#     MODEL_PROVIDERS_DICT["Anthropic"] = {
+#         "fields": anthropic_fields,
+#         "inputs": anthropic_inputs,
+#         "prefix": "",
+#         "component_class": AnthropicModelComponent(),
+#         "icon": AnthropicModelComponent.icon,
+#     }
+# except ImportError:
+#     pass
 
-try:
-    sambanova_inputs, sambanova_fields = _get_sambanova_inputs_and_fields()
-    MODEL_PROVIDERS_DICT["SambaNova"] = {
-        "fields": sambanova_fields,
-        "inputs": sambanova_inputs,
-        "prefix": "",
-        "component_class": SambaNovaComponent(),
-        "icon": SambaNovaComponent.icon,
-    }
-except ImportError:
-    pass
+# try:
+#     nvidia_inputs, nvidia_fields = _get_nvidia_inputs_and_fields()
+#     MODEL_PROVIDERS_DICT["NVIDIA"] = {
+#         "fields": nvidia_fields,
+#         "inputs": nvidia_inputs,
+#         "prefix": "",
+#         "component_class": NVIDIAModelComponent(),
+#         "icon": NVIDIAModelComponent.icon,
+#     }
+# except ImportError:
+#     pass
+
+# try:
+#     bedrock_inputs, bedrock_fields = _get_amazon_bedrock_inputs_and_fields()
+#     MODEL_PROVIDERS_DICT["Amazon Bedrock"] = {
+#         "fields": bedrock_fields,
+#         "inputs": bedrock_inputs,
+#         "prefix": "",
+#         "component_class": AmazonBedrockComponent(),
+#         "icon": AmazonBedrockComponent.icon,
+#     }
+# except ImportError:
+#     pass
+
+# try:
+#     google_generative_ai_inputs, google_generative_ai_fields = _get_google_generative_ai_inputs_and_fields()
+#     MODEL_PROVIDERS_DICT["Google Generative AI"] = {
+#         "fields": google_generative_ai_fields,
+#         "inputs": google_generative_ai_inputs,
+#         "prefix": "",
+#         "component_class": GoogleGenerativeAIComponent(),
+#         "icon": GoogleGenerativeAIComponent.icon,
+#     }
+# except ImportError:
+#     pass
+
+# try:
+#     sambanova_inputs, sambanova_fields = _get_sambanova_inputs_and_fields()
+#     MODEL_PROVIDERS_DICT["SambaNova"] = {
+#         "fields": sambanova_fields,
+#         "inputs": sambanova_inputs,
+#         "prefix": "",
+#         "component_class": SambaNovaComponent(),
+#         "icon": SambaNovaComponent.icon,
+#     }
+# except ImportError:
+#     pass
 
 MODEL_PROVIDERS = list(MODEL_PROVIDERS_DICT.keys())
 ALL_PROVIDER_FIELDS: list[str] = [field for provider in MODEL_PROVIDERS_DICT.values() for field in provider["fields"]]

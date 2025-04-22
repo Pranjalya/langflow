@@ -38,13 +38,13 @@ class AgentComponent(ToolCallingAgentComponent):
             name="agent_llm",
             display_name="Model Provider",
             info="The provider of the language model that the agent will use to generate responses.",
-            options=[*sorted(MODEL_PROVIDERS_DICT.keys()), "Custom"],
-            value="OpenAI",
+            options=[*sorted(MODEL_PROVIDERS_DICT.keys())],
+            value=sorted(MODEL_PROVIDERS_DICT.keys())[0],
             real_time_refresh=True,
             input_types=[],
             options_metadata=[MODELS_METADATA[key] for key in sorted(MODELS_METADATA.keys())] + [{"icon": "brain"}],
         ),
-        *MODEL_PROVIDERS_DICT["OpenAI"]["inputs"],
+        *MODEL_PROVIDERS_DICT[sorted(MODEL_PROVIDERS_DICT.keys())[0]]["inputs"],
         MultilineInput(
             name="system_prompt",
             display_name="Agent Instructions",
@@ -59,7 +59,7 @@ class AgentComponent(ToolCallingAgentComponent):
             display_name="Current Date",
             advanced=True,
             info="If true, will add a tool to the agent that returns the current date.",
-            value=True,
+            value=False,
         ),
     ]
     outputs = [Output(name="response", display_name="Response", method="message_response")]
