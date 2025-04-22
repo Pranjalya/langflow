@@ -1,6 +1,7 @@
 # from .aiml import AIMLModelComponent
 # from .anthropic import AnthropicModelComponent
 from .azure_openai import AzureChatOpenAIComponent
+from .llm_gateway import LLMGatewayComponent
 # from .baidu_qianfan_chat import QianfanChatEndpointComponent
 # from .cohere import CohereComponent
 # from .deepseek import DeepSeekModelComponent
@@ -26,6 +27,7 @@ __all__ = [
     # "AIMLModelComponent",
     # "AnthropicModelComponent",
     "AzureChatOpenAIComponent",
+    "LLMGatewayComponent",
     # "ChatOllamaComponent",
     # "ChatVertexAIComponent",
     # "CohereComponent",

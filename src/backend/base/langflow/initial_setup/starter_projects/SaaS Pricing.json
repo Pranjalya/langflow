@@ -788,7 +788,8 @@
                 "input_types": [],
                 "name": "agent_llm",
                 "options": [
-                  "Azure OpenAI"
+                  "Azure OpenAI",
+                  "LLM Gateway"
                 ],
                 "placeholder": "",
                 "real_time_refresh": true,

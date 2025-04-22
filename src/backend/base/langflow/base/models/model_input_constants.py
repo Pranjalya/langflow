@@ -4,6 +4,7 @@ from langflow.base.models.model import LCModelComponent
 # from langflow.components.amazon.amazon_bedrock_model import AmazonBedrockComponent
 # from langflow.components.models.anthropic import AnthropicModelComponent
 from langflow.components.models.azure_openai import AzureChatOpenAIComponent
+from langflow.components.models.llm_gateway import LLMGatewayComponent
 # from langflow.components.models.google_generative_ai import GoogleGenerativeAIComponent
 # from langflow.components.models.groq import GroqModel
 # from langflow.components.models.nvidia import NVIDIAModelComponent
@@ -78,6 +79,17 @@ def _get_azure_inputs_and_fields():
         msg = "Azure OpenAI is not installed. Please install it with `pip install langchain-azure-openai`."
         raise ImportError(msg) from e
     return azure_inputs, create_input_fields_dict(azure_inputs, "")
+
+
+def _get_llm_gateway_inputs_and_fields():
+    try:
+        from langflow.components.models.llm_gateway import LLMGatewayComponent
+
+        llm_gateway_inputs = get_filtered_inputs(LLMGatewayComponent)
+    except ImportError as e:
+        msg = "LLM Gateway is not installed. Please install it with `pip install langchain-llm-gateway`."
+        raise ImportError(msg) from e
+    return llm_gateway_inputs, create_input_fields_dict(llm_gateway_inputs, "")
 
 
 # def _get_google_generative_ai_inputs_and_fields():
@@ -170,6 +182,19 @@ try:
         "prefix": "",
         "component_class": AzureChatOpenAIComponent(),
         "icon": AzureChatOpenAIComponent.icon,
+    }
+except ImportError:
+    pass
+
+
+try:
+    llm_gateway_inputs, llm_gateway_fields = _get_llm_gateway_inputs_and_fields()
+    MODEL_PROVIDERS_DICT["LLM Gateway"] = {
+        "fields": llm_gateway_fields,
+        "inputs": llm_gateway_inputs,
+        "prefix": "",
+        "component_class": LLMGatewayComponent(),
+        "icon": LLMGatewayComponent.icon,
     }
 except ImportError:
     pass

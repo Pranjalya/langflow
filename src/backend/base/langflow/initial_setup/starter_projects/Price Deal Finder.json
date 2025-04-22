@@ -1622,7 +1622,8 @@
                 "input_types": [],
                 "name": "agent_llm",
                 "options": [
-                  "Azure OpenAI"
+                  "Azure OpenAI",
+                  "LLM Gateway"
                 ],
                 "options_metadata": [],
                 "placeholder": "",

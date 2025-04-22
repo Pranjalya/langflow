@@ -43,7 +43,7 @@ LLM_OPTIONS = [
 ]
 
 
-class LLMGateway(LCModelComponent):
+class LLMGatewayComponent(LCModelComponent):
     display_name: str = "LLM Gateway"
     description: str = "Generate text using Custom LLM Gateways"
     documentation: str = ""
