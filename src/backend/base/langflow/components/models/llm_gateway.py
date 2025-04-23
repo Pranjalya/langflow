@@ -5,7 +5,7 @@ from langchain_openai import ChatOpenAI
 from langflow.base.models.model import LCModelComponent
 from langflow.field_typing import LanguageModel
 from langflow.field_typing.range_spec import RangeSpec
-from langflow.inputs import StrInput, BoolInput
+from langflow.inputs import StrInput, BoolInput, SecretStrInput
 from langflow.io import DropdownInput, IntInput, SliderInput
 from langflow.logging import logger
 
@@ -45,7 +45,7 @@ LLM_OPTIONS = [
 
 class LLMGatewayComponent(LCModelComponent):
     display_name: str = "LLM Gateway"
-    description: str = "Generate text using Custom LLM Gateways"
+    description: str = "Generate text using Custom LLM Gateway"
     documentation: str = ""
     beta = False
     icon = "Brain"
@@ -85,10 +85,26 @@ class LLMGatewayComponent(LCModelComponent):
         StrInput(
             name="base_url",
             display_name="LLM Gateway API Base URL",
-            value=os.environ.get("LLMGW_API_BASE", ""),
-            advanced=True,
-            info="The base URL of the OpenAI API. "
+            value="",
+            advanced=False,
+            info="The base URL of the LLM Gateway. "
             "Defaults to LLMGW_API_BASE in environment file.",
+        ),
+        SecretStrInput(
+            name="llmgw_api_key",
+            display_name="LLM Gateway API Key",
+            value="",
+            advanced=False,
+            info="The API Key of the LLM Gateway. "
+            "Defaults to LLMGW_API_KEY in environment file.",
+        ),
+        StrInput(
+            name="llmgw_workspace",
+            display_name="LLM Gateway Workspace Name",
+            value="",
+            advanced=False,
+            info="The workspace name of the LLM Gateway. "
+            "Defaults to LLMGW_WORKSPACE in environment file.",
         ),
         IntInput(
             name="seed",
@@ -118,14 +134,14 @@ class LLMGatewayComponent(LCModelComponent):
             "api_key": "NONE",
             "model": self.model_name,
             "max_tokens": self.max_tokens or None,
-            "base_url": self.base_url,
+            "base_url": self.base_url or os.environ.get("LLMGW_API_BASE", ""),
             "seed": self.seed,
             "max_retries": self.max_retries,
             "timeout": self.timeout,
             "temperature": self.temperature if self.temperature is not None else 0.1,
             "default_headers": {
-                "api-key": os.environ.get("LLMGW_API_KEY", ""),
-                "workspacename": os.environ.get("LLMGW_WORKSPACE", ""),
+                "api-key": self.llmgw_api_key or os.environ.get("LLMGW_API_KEY", ""),
+                "workspacename": self.llmgw_workspace or os.environ.get("LLMGW_WORKSPACE", ""),
             }
         }
 

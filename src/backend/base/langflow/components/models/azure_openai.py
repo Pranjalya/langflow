@@ -16,6 +16,7 @@ class AzureChatOpenAIComponent(LCModelComponent):
     name = "AzureOpenAIModel"
 
     AZURE_OPENAI_API_VERSIONS = [
+        "2024-12-01-preview",
         "2024-06-01",
         "2024-07-01-preview",
         "2024-08-01-preview",
@@ -45,7 +46,6 @@ class AzureChatOpenAIComponent(LCModelComponent):
                 (
                     version
                     for version in sorted(AZURE_OPENAI_API_VERSIONS, reverse=True)
-                    if not version.endswith("-preview")
                 ),
                 AZURE_OPENAI_API_VERSIONS[0],
             ),
