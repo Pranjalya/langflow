@@ -279,4 +279,4 @@ src/frontend/temp
 *.db
 
 dumps
-test.py
+test_*.py
