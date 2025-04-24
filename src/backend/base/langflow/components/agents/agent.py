@@ -59,7 +59,7 @@ class AgentComponent(ToolCallingAgentComponent):
             display_name="Current Date",
             advanced=True,
             info="If true, will add a tool to the agent that returns the current date.",
-            value=False,
+            value=True,
         ),
     ]
     outputs = [Output(name="response", display_name="Response", method="message_response")]

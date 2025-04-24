@@ -142,7 +142,8 @@ class LLMGatewayComponent(LCModelComponent):
             "default_headers": {
                 "api-key": self.llmgw_api_key or os.environ.get("LLMGW_API_KEY", ""),
                 "workspacename": self.llmgw_workspace or os.environ.get("LLMGW_WORKSPACE", ""),
-            }
+            },
+            "disable_streaming": True
         }
 
         logger.info(f"Model name: {self.model_name}")
