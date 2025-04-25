@@ -26,8 +26,8 @@ from .llm_gateway import LLMGatewayComponent
 __all__ = [
     # "AIMLModelComponent",
     # "AnthropicModelComponent",
-    "AzureChatOpenAIComponent",
     "LLMGatewayComponent",
+    "AzureChatOpenAIComponent",
     # "ChatOllamaComponent",
     # "ChatVertexAIComponent",
     # "CohereComponent",
