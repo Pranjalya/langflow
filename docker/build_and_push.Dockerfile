@@ -23,13 +23,12 @@ ENV UV_LINK_MODE=copy
 RUN apt-get update \
     && apt-get upgrade -y \
     && apt-get install --no-install-recommends -y \
-    # deps for building python deps
     build-essential \
     git \
-    # npm
-    npm \
-    # gcc
+    curl \
     gcc \
+    && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && apt-get install --no-install-recommends -y nodejs \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
