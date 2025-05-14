@@ -3,7 +3,7 @@ from typing_extensions import TypedDict
 from langflow.base.models.model import LCModelComponent
 # from langflow.components.amazon.amazon_bedrock_model import AmazonBedrockComponent
 # from langflow.components.models.anthropic import AnthropicModelComponent
-from langflow.components.models.azure_openai import AzureChatOpenAIComponent
+# from non_compliant_models.azure_openai import AzureChatOpenAIComponent
 from langflow.components.models.llm_gateway import LLMGatewayComponent
 # from langflow.components.models.google_generative_ai import GoogleGenerativeAIComponent
 # from langflow.components.models.groq import GroqModel
@@ -70,15 +70,15 @@ def create_input_fields_dict(inputs: list[Input], prefix: str) -> dict[str, Inpu
     return {f"{prefix}{input_.name}": input_.to_dict() for input_ in inputs}
 
 
-def _get_azure_inputs_and_fields():
-    try:
-        from langflow.components.models.azure_openai import AzureChatOpenAIComponent
+# def _get_azure_inputs_and_fields():
+#     try:
+#         from non_compliant_models.azure_openai import AzureChatOpenAIComponent
 
-        azure_inputs = get_filtered_inputs(AzureChatOpenAIComponent)
-    except ImportError as e:
-        msg = "Azure OpenAI is not installed. Please install it with `pip install langchain-azure-openai`."
-        raise ImportError(msg) from e
-    return azure_inputs, create_input_fields_dict(azure_inputs, "")
+#         azure_inputs = get_filtered_inputs(AzureChatOpenAIComponent)
+#     except ImportError as e:
+#         msg = "Azure OpenAI is not installed. Please install it with `pip install langchain-azure-openai`."
+#         raise ImportError(msg) from e
+#     return azure_inputs, create_input_fields_dict(azure_inputs, "")
 
 
 def _get_llm_gateway_inputs_and_fields():
@@ -174,17 +174,17 @@ def _get_llm_gateway_inputs_and_fields():
 
 MODEL_PROVIDERS_DICT: dict[str, ModelProvidersDict] = {}
 
-try:
-    azure_inputs, azure_fields = _get_azure_inputs_and_fields()
-    MODEL_PROVIDERS_DICT["Azure OpenAI"] = {
-        "fields": azure_fields,
-        "inputs": azure_inputs,
-        "prefix": "",
-        "component_class": AzureChatOpenAIComponent(),
-        "icon": AzureChatOpenAIComponent.icon,
-    }
-except ImportError:
-    pass
+# try:
+#     azure_inputs, azure_fields = _get_azure_inputs_and_fields()
+#     MODEL_PROVIDERS_DICT["Azure OpenAI"] = {
+#         "fields": azure_fields,
+#         "inputs": azure_inputs,
+#         "prefix": "",
+#         "component_class": AzureChatOpenAIComponent(),
+#         "icon": AzureChatOpenAIComponent.icon,
+#     }
+# except ImportError:
+#     pass
 
 
 try:
