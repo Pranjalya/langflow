@@ -58,29 +58,9 @@ class LLMGatewayComponent(LCModelComponent):
             display_name="Model Name",
             advanced=False,
             options=LLM_OPTIONS + LLM_REASONING_OPTIONS,
-            value="gpt-4o-mini",
+            value="gpt-4o",
             combobox=True,
             real_time_refresh=True,
-        ),
-        SliderInput(
-            name="temperature",
-            display_name="Temperature",
-            value=0.4,
-            range_spec=RangeSpec(min=0, max=2, step=0.01),
-            info="Controls randomness. Lower values are more deterministic, higher values are more creative.",
-            advanced=True,
-        ),
-        IntInput(
-            name="max_tokens",
-            display_name="Max Tokens",
-            advanced=True,
-            info="The maximum number of tokens to generate. Set to 0 for unlimited tokens.",
-        ),
-        BoolInput(
-            name="json_mode",
-            display_name="JSON Mode",
-            advanced=True,
-            info="If True, it will output JSON regardless of passing a schema.",
         ),
         StrInput(
             name="base_url",
@@ -105,6 +85,26 @@ class LLMGatewayComponent(LCModelComponent):
             advanced=False,
             info="The workspace name of the LLM Gateway. "
             "Defaults to LLMGW_WORKSPACE in environment file.",
+        ),
+        SliderInput(
+            name="temperature",
+            display_name="Temperature",
+            value=0.4,
+            range_spec=RangeSpec(min=0, max=2, step=0.01),
+            info="Controls randomness. Lower values are more deterministic, higher values are more creative.",
+            advanced=True,
+        ),
+        IntInput(
+            name="max_tokens",
+            display_name="Max Tokens",
+            advanced=True,
+            info="The maximum number of tokens to generate. Set to 0 for unlimited tokens.",
+        ),
+        BoolInput(
+            name="json_mode",
+            display_name="JSON Mode",
+            advanced=True,
+            info="If True, it will output JSON regardless of passing a schema.",
         ),
         IntInput(
             name="seed",
