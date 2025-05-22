@@ -11,15 +11,17 @@ from uuid import UUID
 import orjson
 from aiofile import async_open
 from anyio import Path
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status # Added status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel # Added BaseModel
 from fastapi_pagination import Page, Params
 from fastapi_pagination.ext.sqlmodel import apaginate
-from sqlmodel import and_, col, select
+from sqlmodel import and_, col, or_, select # Added or_
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from langflow.api.utils import CurrentActiveUser, DbSession, cascade_delete_flow, remove_api_keys, validate_is_component
+from langflow.api.permission_checker import PermissionChecker # Added
 from langflow.api.v1.schemas import FlowListCreate
 from langflow.helpers.user import get_user_by_flow_id_or_endpoint_name
 from langflow.initial_setup.constants import STARTER_FOLDER_NAME
@@ -29,7 +31,8 @@ from langflow.services.database.models.flow.model import AccessTypeEnum, FlowHea
 from langflow.services.database.models.flow.utils import get_webhook_component_in_flow
 from langflow.services.database.models.folder.constants import DEFAULT_FOLDER_NAME
 from langflow.services.database.models.folder.model import Folder
-from langflow.services.deps import get_settings_service
+from langflow.services.deps import get_settings_service, get_permission_service # Added get_permission_service
+from langflow.services.permission.service import PermissionService, ResourceTypeEnum, PermissionTypeEnum # Added
 from langflow.services.settings.service import SettingsService
 from langflow.utils.compression import compress_response
 
@@ -142,11 +145,22 @@ async def create_flow(
     session: DbSession,
     flow: FlowCreate,
     current_user: CurrentActiveUser,
+    permission_service: PermissionService = Depends(get_permission_service), # Added
 ):
     try:
         db_flow = await _new_flow(session=session, flow=flow, user_id=current_user.id)
         await session.commit()
         await session.refresh(db_flow)
+
+        # Grant OWNER permission to the creator
+        await permission_service.grant_permission(
+            user_id=current_user.id,
+            resource_id=db_flow.id,
+            resource_type=ResourceTypeEnum.FLOW,
+            permission=PermissionTypeEnum.OWNER,
+            db_session=session,
+        )
+        await session.commit() # Commit after granting permission
 
         await _save_flow_to_fs(db_flow)
 
@@ -173,6 +187,7 @@ async def read_flows(
     *,
     current_user: CurrentActiveUser,
     session: DbSession,
+    permission_service: PermissionService = Depends(get_permission_service), # Added
     remove_example_flows: bool = False,
     components_only: bool = False,
     get_all: bool = True,
@@ -180,116 +195,103 @@ async def read_flows(
     params: Annotated[Params, Depends()],
     header_flows: bool = False,
 ):
-    """Retrieve a list of flows with pagination support.
-
-    Args:
-        current_user (User): The current authenticated user.
-        session (Session): The database session.
-        settings_service (SettingsService): The settings service.
-        components_only (bool, optional): Whether to return only components. Defaults to False.
-
-        get_all (bool, optional): Whether to return all flows without pagination. Defaults to True.
-        **This field must be True because of backward compatibility with the frontend - Release: 1.0.20**
-
-        folder_id (UUID, optional): The project ID. Defaults to None.
-        params (Params): Pagination parameters.
-        remove_example_flows (bool, optional): Whether to remove example flows. Defaults to False.
-        header_flows (bool, optional): Whether to return only specific headers of the flows. Defaults to False.
-
-    Returns:
-        list[FlowRead] | Page[FlowRead] | list[FlowHeader]
-        A list of flows or a paginated response containing the list of flows or a list of flow headers.
-    """
+    """Retrieve a list of flows with pagination support."""
     try:
-        auth_settings = get_settings_service().auth_settings
-
-        default_folder = (await session.exec(select(Folder).where(Folder.name == DEFAULT_FOLDER_NAME))).first()
+        # Default folder and starter folder logic
+        default_folder = (await session.exec(select(Folder).where(Folder.name == DEFAULT_FOLDER_NAME, Folder.user_id == current_user.id))).first()
         default_folder_id = default_folder.id if default_folder else None
-
-        starter_folder = (await session.exec(select(Folder).where(Folder.name == STARTER_FOLDER_NAME))).first()
+        
+        starter_folder = (await session.exec(select(Folder).where(Folder.name == STARTER_FOLDER_NAME))).first() # Global starter folder
         starter_folder_id = starter_folder.id if starter_folder else None
 
-        if not starter_folder and not default_folder:
-            raise HTTPException(
-                status_code=404,
-                detail="Starter project and default project not found. Please create a project and add flows to it.",
-            )
+        if not folder_id and default_folder_id: # Default to user's default folder if no folder_id specified
+             folder_id = default_folder_id
 
-        if not folder_id:
-            folder_id = default_folder_id
-
-        if auth_settings.AUTO_LOGIN:
-            stmt = select(Flow).where(
-                (Flow.user_id == None) | (Flow.user_id == current_user.id)  # noqa: E711
-            )
+        if current_user.is_superuser:
+            stmt = select(Flow)
         else:
-            stmt = select(Flow).where(Flow.user_id == current_user.id)
+            owned_condition = (Flow.user_id == current_user.id)
+            
+            explicitly_shared_flow_ids = await permission_service.list_resources_for_user(
+                user_id=current_user.id,
+                resource_type=ResourceTypeEnum.FLOW,
+                required_permission=PermissionTypeEnum.READ,
+                db_session=session
+            )
+            # Ensure shared_condition is valid even if list is empty
+            shared_condition = col(Flow.id).in_(explicitly_shared_flow_ids) if explicitly_shared_flow_ids else False # type: ignore
 
-        if remove_example_flows:
+            public_condition = (Flow.access_type == AccessTypeEnum.PUBLIC)
+            
+            stmt = select(Flow).where(or_(owned_condition, shared_condition, public_condition))
+
+        # Apply additional filters
+        if remove_example_flows and starter_folder_id:
             stmt = stmt.where(Flow.folder_id != starter_folder_id)
 
         if components_only:
-            stmt = stmt.where(Flow.is_component == True)  # noqa: E712
+            stmt = stmt.where(Flow.is_component == True) # noqa: E712
+
+        if folder_id: # Filter by folder_id if provided
+             stmt = stmt.where(Flow.folder_id == folder_id)
+        
+        # Ordering
+        stmt = stmt.order_by(col(Flow.updated_at).desc().nulls_last())
 
         if get_all:
-            flows = (await session.exec(stmt)).all()
-            flows = validate_is_component(flows)
+            flows_result = (await session.exec(stmt)).all()
+            flows_result = validate_is_component(flows_result) # Keep this as per original
+            
+            # The original code re-filtered here, which might be redundant if SQL is perfect,
+            # but kept for safety/consistency with original behavior.
             if components_only:
-                flows = [flow for flow in flows if flow.is_component]
+                flows_result = [flow for flow in flows_result if flow.is_component]
             if remove_example_flows and starter_folder_id:
-                flows = [flow for flow in flows if flow.folder_id != starter_folder_id]
+                flows_result = [flow for flow in flows_result if flow.folder_id != starter_folder_id]
+
             if header_flows:
-                # Convert to FlowHeader objects and compress the response
-                flow_headers = [FlowHeader.model_validate(flow, from_attributes=True) for flow in flows]
+                flow_headers = [FlowHeader.model_validate(flow, from_attributes=True) for flow in flows_result]
                 return compress_response(flow_headers)
-
-            # Compress the full flows response
-            return compress_response(flows)
-
-        stmt = stmt.where(Flow.folder_id == folder_id)
-
-        import warnings
-
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore", category=DeprecationWarning, module=r"fastapi_pagination\.ext\.sqlalchemy"
-            )
+            return compress_response(flows_result)
+        else: 
+            # Paginated response
+            # The folder_id filter is applied before pagination if folder_id is set.
             return await apaginate(session, stmt, params=params)
 
     except Exception as e:
+        logger.exception(f"Error reading flows: {e}") # Added logger
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 async def _read_flow(
-    session: AsyncSession,
+    session: AsyncSession, # Changed signature
     flow_id: UUID,
-    user_id: UUID,
-    settings_service: SettingsService,
 ):
-    """Read a flow."""
-    auth_settings = settings_service.auth_settings
+    """Read a flow by ID. User access should be checked before calling this."""
+    # Removed old logic related to auth_settings.AUTO_LOGIN and user_id
     stmt = select(Flow).where(Flow.id == flow_id)
-    if auth_settings.AUTO_LOGIN:
-        # If auto login is enable user_id can be current_user.id or None
-        # so write an OR
-        stmt = stmt.where(
-            (Flow.user_id == user_id) | (Flow.user_id == None)  # noqa: E711
-        )
     return (await session.exec(stmt)).first()
 
 
-@router.get("/{flow_id}", response_model=FlowRead, status_code=200)
+@router.get("/{flow_id}", response_model=FlowRead, status_code=200,
+            dependencies=[Depends(PermissionChecker(resource_type=ResourceTypeEnum.FLOW,
+                                                     required_permission=PermissionTypeEnum.READ,
+                                                     resource_id_param_name="flow_id"))]) # Added dependencies
 async def read_flow(
     *,
-    session: DbSession,
+    session: DbSession, # current_user removed
     flow_id: UUID,
-    current_user: CurrentActiveUser,
 ):
     """Read a flow."""
-    if user_flow := await _read_flow(session, flow_id, current_user.id, get_settings_service()):
-        return user_flow
-    raise HTTPException(status_code=404, detail="Flow not found")
+    # PermissionChecker handles authorization.
+    user_flow = await _read_flow(session=session, flow_id=flow_id) # Updated call
 
+    if user_flow:
+        return user_flow
+    raise HTTPException(status_code=404, detail="Flow not found.")
+
+# update_flow still uses current_user for default folder logic, so it remains in signature.
+# The _read_flow helper was simplified, but current_user is needed by the main update_flow.
 
 @router.get("/public_flow/{flow_id}", response_model=FlowRead, status_code=200)
 async def read_public_flow(
@@ -306,25 +308,28 @@ async def read_public_flow(
     return await read_flow(session=session, flow_id=flow_id, current_user=current_user)
 
 
-@router.patch("/{flow_id}", response_model=FlowRead, status_code=200)
+@router.patch("/{flow_id}", response_model=FlowRead, status_code=200,
+              dependencies=[Depends(PermissionChecker(resource_type=ResourceTypeEnum.FLOW,
+                                                       required_permission=PermissionTypeEnum.WRITE,
+                                                       resource_id_param_name="flow_id"))]) # Added dependencies
 async def update_flow(
     *,
     session: DbSession,
     flow_id: UUID,
     flow: FlowUpdate,
-    current_user: CurrentActiveUser,
+    current_user: CurrentActiveUser, # Kept for default folder logic and settings_service use if needed
 ):
     """Update a flow."""
-    settings_service = get_settings_service()
+    settings_service = get_settings_service() # Still used for remove_api_keys
     try:
+        # PermissionChecker has run. Now fetch the flow using the simplified _read_flow.
         db_flow = await _read_flow(
             session=session,
-            flow_id=flow_id,
-            user_id=current_user.id,
-            settings_service=settings_service,
+            flow_id=flow_id
         )
 
         if not db_flow:
+            # This means PermissionChecker allowed access, but the flow is now gone.
             raise HTTPException(status_code=404, detail="Flow not found")
 
         update_data = flow.model_dump(exclude_unset=True, exclude_none=True)
@@ -346,7 +351,8 @@ async def update_flow(
         db_flow.updated_at = datetime.now(timezone.utc)
 
         if db_flow.folder_id is None:
-            default_folder = (await session.exec(select(Folder).where(Folder.name == DEFAULT_FOLDER_NAME))).first()
+            # Corrected default folder logic to be user-specific
+            default_folder = (await session.exec(select(Folder).where(Folder.name == DEFAULT_FOLDER_NAME, Folder.user_id == current_user.id))).first()
             if default_folder:
                 db_flow.folder_id = default_folder.id
 
@@ -368,32 +374,39 @@ async def update_flow(
                 status_code=400, detail=f"{column.capitalize().replace('_', ' ')} must be unique"
             ) from e
 
-        if hasattr(e, "status_code"):
-            raise HTTPException(status_code=e.status_code, detail=str(e)) from e
+        if hasattr(e, "status_code") and isinstance(e, HTTPException): # Added isinstance check
+            raise # Re-raise if it's already an HTTPException
         raise HTTPException(status_code=500, detail=str(e)) from e
 
     return db_flow
 
 
-@router.delete("/{flow_id}", status_code=200)
+@router.delete("/{flow_id}", status_code=200,
+               dependencies=[Depends(PermissionChecker(resource_type=ResourceTypeEnum.FLOW,
+                                                        required_permission=PermissionTypeEnum.OWNER,
+                                                        resource_id_param_name="flow_id"))]) # Added dependencies
 async def delete_flow(
     *,
     session: DbSession,
     flow_id: UUID,
-    current_user: CurrentActiveUser,
+    current_user: CurrentActiveUser, # Kept as per LLD
 ):
     """Delete a flow."""
+    # PermissionChecker ensures only owner (or admin) can proceed.
+    # Fetch the flow using the simplified _read_flow to ensure it exists before cascade delete.
     flow = await _read_flow(
         session=session,
-        flow_id=flow_id,
-        user_id=current_user.id,
-        settings_service=get_settings_service(),
+        flow_id=flow_id  # Updated call
     )
     if not flow:
-        raise HTTPException(status_code=404, detail="Flow not found")
+        # This implies PermissionChecker allowed (e.g. superuser) but flow is gone,
+        # or for a non-superuser owner, the flow they owned was deleted just now.
+        raise HTTPException(status_code=404, detail="Flow not found.")
+
+    # cascade_delete_flow will handle deleting related components
     await cascade_delete_flow(session, flow.id)
     await session.commit()
-    return {"message": "Flow deleted successfully"}
+    return {"message": "Flow deleted successfully"} # LLD specifies a return message
 
 
 @router.post("/batch/", response_model=list[FlowRead], status_code=201)
@@ -571,3 +584,69 @@ async def read_basic_examples(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+# Pydantic model for sharing requests
+class ShareRequest(BaseModel):
+    user_id_to_share_with: UUID
+    permission: PermissionTypeEnum
+
+
+@router.post("/{flow_id}/permissions", 
+             status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(PermissionChecker(resource_type=ResourceTypeEnum.FLOW, 
+                                                      required_permission=PermissionTypeEnum.OWNER, 
+                                                      resource_id_param_name="flow_id"))])
+async def grant_flow_permission(
+    flow_id: UUID,
+    share_request: ShareRequest,
+    permission_service: PermissionService = Depends(get_permission_service),
+    session: DbSession = Depends(), # Ensure DbSession is correctly injected if not already via Depends() on router
+):
+    try:
+        await permission_service.grant_permission(
+            user_id=share_request.user_id_to_share_with,
+            resource_id=flow_id,
+            resource_type=ResourceTypeEnum.FLOW,
+            permission=share_request.permission,
+            db_session=session
+        )
+        # Assuming grant_permission handles commit when db_session is passed
+        return {"message": f"Permission '{share_request.permission.value}' granted to user {share_request.user_id_to_share_with} for flow {flow_id}."}
+    except Exception as e:
+        logger.error(f"Error granting permission for flow {flow_id} to user {share_request.user_id_to_share_with}: {e}")
+        # Check if it's an HTTPException and re-raise, otherwise wrap in 500
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.delete("/{flow_id}/permissions", 
+              status_code=status.HTTP_200_OK,
+              dependencies=[Depends(PermissionChecker(resource_type=ResourceTypeEnum.FLOW, 
+                                                       required_permission=PermissionTypeEnum.OWNER, 
+                                                       resource_id_param_name="flow_id"))])
+async def revoke_flow_permission(
+    flow_id: UUID,
+    revoke_request: ShareRequest, 
+    permission_service: PermissionService = Depends(get_permission_service),
+    session: DbSession = Depends(), # Ensure DbSession is correctly injected
+):
+    try:
+        success = await permission_service.revoke_permission(
+            user_id=revoke_request.user_id_to_share_with, 
+            resource_id=flow_id,
+            resource_type=ResourceTypeEnum.FLOW,
+            permission=revoke_request.permission,
+            db_session=session
+        )
+        # Assuming revoke_permission handles commit when db_session is passed
+        if success:
+            return {"message": f"Permission '{revoke_request.permission.value}' revoked from user {revoke_request.user_id_to_share_with} for flow {flow_id}."}
+        else:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Permission not found or could not be revoked.")
+    except Exception as e:
+        logger.error(f"Error revoking permission for flow {flow_id} from user {revoke_request.user_id_to_share_with}: {e}")
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))

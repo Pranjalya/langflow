@@ -13,6 +13,7 @@ class ServiceType(str, Enum):
     SESSION_SERVICE = "session_service"
     TASK_SERVICE = "task_service"
     STORE_SERVICE = "store_service"
+    PERMISSION_SERVICE = "permission_service"
     VARIABLE_SERVICE = "variable_service"
     STORAGE_SERVICE = "storage_service"
     # SOCKETIO_SERVICE = "socket_service"

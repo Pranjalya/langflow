@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from langflow.services.chat.service import ChatService
     from langflow.services.database.service import DatabaseService
     from langflow.services.job_queue.service import JobQueueService
+    from langflow.services.permission.service import PermissionService # Added
     from langflow.services.session.service import SessionService
     from langflow.services.settings.service import SettingsService
     from langflow.services.socket.service import SocketIOService
@@ -231,6 +232,15 @@ def get_chat_service() -> ChatService:
         ChatService: The chat service instance.
     """
     return get_service(ServiceType.CHAT_SERVICE)
+
+
+def get_permission_service() -> "PermissionService":
+    """Retrieves the PermissionService instance from the service manager.
+
+    Returns:
+        PermissionService: The PermissionService instance.
+    """
+    return get_service(ServiceType.PERMISSION_SERVICE)
 
 
 def get_store_service() -> StoreService:

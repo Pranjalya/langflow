@@ -33,7 +33,8 @@ from langflow.services.database.models.flow.model import Flow, FlowCreate
 from langflow.services.database.models.folder.constants import DEFAULT_FOLDER_NAME
 from langflow.services.database.models.folder.model import Folder, FolderCreate, FolderRead
 from langflow.services.database.models.user.crud import get_user_by_username
-from langflow.services.deps import get_settings_service, get_storage_service, get_variable_service, session_scope
+from langflow.services.deps import get_settings_service, get_storage_service, get_variable_service, session_scope, get_permission_service # Added get_permission_service
+from langflow.services.permission.service import PermissionService, ResourceTypeEnum, PermissionTypeEnum # Added
 from langflow.template.field.prompt import DEFAULT_PROMPT_INTUT_TYPES
 from langflow.utils.util import escape_json_dump
 
@@ -636,9 +637,10 @@ def create_new_project(
     project_icon,
     project_icon_bg_color,
     new_folder_id,
-) -> None:
-    logger.debug(f"Creating starter project {project_name}")
-    new_project = FlowCreate(
+    owner_id: UUID, # Added owner_id
+) -> Flow: # Added return type hint
+    logger.debug(f"Creating starter project {project_name} for owner {owner_id}")
+    new_project_create = FlowCreate( # Renamed to avoid conflict with module 'project'
         name=project_name,
         description=project_description,
         icon=project_icon,
@@ -649,9 +651,11 @@ def create_new_project(
         folder_id=new_folder_id,
         gradient=project_gradient,
         tags=project_tags,
+        user_id=owner_id, # Set user_id here
     )
-    db_flow = Flow.model_validate(new_project, from_attributes=True)
+    db_flow = Flow.model_validate(new_project_create, from_attributes=True)
     session.add(db_flow)
+    return db_flow # Return the created db_flow
 
 
 async def get_all_flows_similar_to_project(session: AsyncSession, folder_id: UUID) -> list[Flow]:
@@ -803,54 +807,89 @@ async def load_bundles_from_urls() -> tuple[list[TemporaryDirectory], list[str]]
 
 
 async def upsert_flow_from_file(file_content: AnyStr, filename: str, session: AsyncSession, user_id: UUID) -> None:
-    flow = orjson.loads(file_content)
-    flow_endpoint_name = flow.get("endpoint_name")
-    if _is_valid_uuid(filename):
-        flow["id"] = filename
-    flow_id = flow.get("id")
-
-    if isinstance(flow_id, str):
+    flow_data_dict = orjson.loads(file_content) # Renamed from 'flow'
+    flow_endpoint_name = flow_data_dict.get("endpoint_name")
+    
+    flow_id_str = flow_data_dict.get("id")
+    if _is_valid_uuid(filename): # If filename is a valid UUID, it might be preferred as ID
+        flow_id_str = filename
+    
+    flow_id = None # Initialize flow_id as Optional[UUID]
+    if isinstance(flow_id_str, str):
         try:
-            flow_id = UUID(flow_id)
+            flow_id = UUID(flow_id_str)
         except ValueError:
-            logger.error(f"Invalid UUID string: {flow_id}")
-            return
+            logger.error(f"Invalid UUID string for flow id: {flow_id_str}")
+            # For now, let it proceed; find_existing_flow might use endpoint_name or fail.
+    elif isinstance(flow_id_str, UUID): # Should not happen if orjson.loads gives string
+        flow_id = flow_id_str
 
-    existing = await find_existing_flow(session, flow_id, flow_endpoint_name)
-    if existing:
-        logger.debug(f"Found existing flow: {existing.name}")
-        logger.info(f"Updating existing flow: {flow_id} with endpoint name {flow_endpoint_name}")
-        for key, value in flow.items():
-            if hasattr(existing, key):
-                # flow dict from json and db representation are not 100% the same
-                setattr(existing, key, value)
-        existing.updated_at = datetime.now(tz=timezone.utc).astimezone()
-        existing.user_id = user_id
+    existing_flow_model = await find_existing_flow(session, flow_id, flow_endpoint_name) # Renamed 'existing'
 
+    permission_service = get_permission_service() # Get service once
+
+    if existing_flow_model:
+        logger.debug(f"Found existing flow: {existing_flow_model.name}")
+        logger.info(f"Updating existing flow: {existing_flow_model.id} with endpoint name {flow_endpoint_name}")
+        
+        # Preserve existing ID if filename was not a valid UUID or didn't match existing ID
+        # This ensures we are updating the correct record found by find_existing_flow
+        current_flow_id = existing_flow_model.id
+
+        for key, value in flow_data_dict.items():
+            if key == "id" and value != current_flow_id: # Prevent changing ID if it was used to find the flow
+                continue
+            if hasattr(existing_flow_model, key):
+                setattr(existing_flow_model, key, value)
+        
+        existing_flow_model.id = current_flow_id # Ensure ID is correctly set
+        existing_flow_model.updated_at = datetime.now(tz=timezone.utc) # Removed .astimezone()
+        existing_flow_model.user_id = user_id # Critical: ensure ownership is correctly set/updated
+        
         # Ensure that the flow is associated with an existing default folder
-        if existing.folder_id is None:
-            folder_id = await get_or_create_default_folder(session, user_id)
-            existing.folder_id = folder_id
-
-        if isinstance(existing.id, str):
-            try:
-                existing.id = UUID(existing.id)
-            except ValueError:
-                logger.error(f"Invalid UUID string: {existing.id}")
-                return
-
-        session.add(existing)
+        if existing_flow_model.folder_id is None:
+            folder = await get_or_create_default_folder(session, user_id) # folder is FolderRead
+            existing_flow_model.folder_id = folder.id
+            
+        session.add(existing_flow_model)
+        # Grant OWNER permission for existing flow being upserted for this user
+        if existing_flow_model.user_id and existing_flow_model.id:
+            await permission_service.grant_permission(
+                user_id=existing_flow_model.user_id,
+                resource_id=existing_flow_model.id,
+                resource_type=ResourceTypeEnum.FLOW,
+                permission=PermissionTypeEnum.OWNER,
+                db_session=session
+            )
     else:
-        logger.info(f"Creating new flow: {flow_id} with endpoint name {flow_endpoint_name}")
-
+        logger.info(f"Creating new flow from file with suggested id {flow_id_str} and endpoint name {flow_endpoint_name}")
+        
         # Assign the newly created flow to the default folder
         folder = await get_or_create_default_folder(session, user_id)
-        flow["user_id"] = user_id
-        flow["folder_id"] = folder.id
-        flow = Flow.model_validate(flow)
-        flow.updated_at = datetime.now(tz=timezone.utc).astimezone()
+        flow_data_dict["user_id"] = user_id # Ensure user_id is in the dict before model_validate
+        flow_data_dict["folder_id"] = folder.id
+        
+        # If flow_id was determined and is valid, use it. Otherwise, Flow model_validate will create one.
+        if flow_id:
+            flow_data_dict["id"] = flow_id
+        elif "id" in flow_data_dict and not _is_valid_uuid(str(flow_data_dict["id"])):
+            # If id from file is not valid, remove it so a new one is generated
+            del flow_data_dict["id"]
 
-        session.add(flow)
+
+        new_flow_model = Flow.model_validate(flow_data_dict) # Renamed 'flow' to 'new_flow_model'
+        new_flow_model.updated_at = datetime.now(tz=timezone.utc) # Removed .astimezone()
+
+        session.add(new_flow_model)
+        # Grant OWNER permission for the new flow
+        if new_flow_model.user_id and new_flow_model.id: 
+            await permission_service.grant_permission(
+                user_id=new_flow_model.user_id,
+                resource_id=new_flow_model.id,
+                resource_type=ResourceTypeEnum.FLOW,
+                permission=PermissionTypeEnum.OWNER,
+                db_session=session
+            )
 
 
 async def find_existing_flow(session, flow_id, flow_endpoint_name):
@@ -876,50 +915,90 @@ async def create_or_update_starter_projects(all_types_dict: dict, *, do_create: 
         do_create (bool, optional): Whether to create new projects. Defaults to True.
     """
     async with session_scope() as session:
-        new_folder = await create_starter_folder(session)
-        starter_projects = await load_starter_projects()
-        await delete_start_projects(session, new_folder.id)
+        # Get PermissionService
+        permission_service = get_permission_service()
+
+        # Get Superuser
+        settings_service = get_settings_service()
+        superuser_username = settings_service.auth_settings.SUPERUSER
+        if not superuser_username:
+            logger.error("Superuser username not configured. Cannot assign owner to starter projects.")
+            return
+        
+        superuser = await get_user_by_username(session, superuser_username)
+        if not superuser:
+            logger.error(f"Superuser {superuser_username} not found. Cannot assign owner to starter projects.")
+            return
+
+        new_folder = await create_starter_folder(session) # This folder is global, not user-specific
+        starter_projects_data_list = await load_starter_projects() # Renamed 'starter_projects'
+        
+        existing_flows_in_starter_folder = await get_all_flows_similar_to_project(session, new_folder.id)
+        for existing_flow in existing_flows_in_starter_folder:
+            # Attempt to revoke OWNER permission from superuser.
+            # If another user somehow owns it, this specific call might not remove it,
+            # but the delete below will still proceed.
+            # This is a best-effort cleanup.
+            if existing_flow.user_id: # Check if there is a user_id to avoid error on revoke
+                 await permission_service.revoke_permission(
+                    user_id=existing_flow.user_id, # Use the actual owner for revocation
+                    resource_id=existing_flow.id,
+                    resource_type=ResourceTypeEnum.FLOW,
+                    permission=PermissionTypeEnum.OWNER, 
+                    db_session=session
+                )
+            await session.delete(existing_flow)
+        if existing_flows_in_starter_folder: # Only commit if deletions happened
+            await session.commit()
+
+
         await copy_profile_pictures()
-        for project_path, project in starter_projects:
+
+        for project_path, project_dict_data in starter_projects_data_list: # Renamed 'project' to 'project_dict_data'
             (
-                project_name,
-                project_description,
-                project_is_component,
-                updated_at_datetime,
-                project_data,
-                project_icon,
-                project_icon_bg_color,
-                project_gradient,
-                project_tags,
-            ) = get_project_data(project)
+                project_name, project_description, project_is_component,
+                updated_at_datetime, project_data_content, project_icon, # Renamed project_data to project_data_content
+                project_icon_bg_color, project_gradient, project_tags,
+            ) = get_project_data(project_dict_data)
+            
             do_update_starter_projects = os.environ.get("LANGFLOW_UPDATE_STARTER_PROJECTS", "true").lower() == "true"
             if do_update_starter_projects:
-                updated_project_data = update_projects_components_with_latest_component_versions(
-                    project_data.copy(), all_types_dict
+                updated_project_data_content = update_projects_components_with_latest_component_versions( # Renamed
+                    project_data_content.copy(), all_types_dict
                 )
-                updated_project_data = update_edges_with_latest_component_versions(updated_project_data)
-                if updated_project_data != project_data:
-                    project_data = updated_project_data
-                    # We also need to update the project data in the file
-                    await update_project_file(project_path, project, updated_project_data)
-            if do_create and project_name and project_data:
-                existing_flows = await get_all_flows_similar_to_project(session, new_folder.id)
-                for existing_project in existing_flows:
-                    await session.delete(existing_project)
-
-                create_new_project(
+                updated_project_data_content = update_edges_with_latest_component_versions(updated_project_data_content) # Renamed
+                if updated_project_data_content != project_data_content:
+                    project_data_content = updated_project_data_content # Use updated
+                    await update_project_file(project_path, project_dict_data, project_data_content) # Pass dict and new content
+            
+            if do_create and project_name and project_data_content:
+                # existing_flows was inside the loop before, now it's handled by deleting all once.
+                
+                db_flow = create_new_project( # Call modified function
                     session=session,
                     project_name=project_name,
                     project_description=project_description,
                     project_is_component=project_is_component,
                     updated_at_datetime=updated_at_datetime,
-                    project_data=project_data,
+                    project_data=project_data_content, # Use renamed variable
                     project_icon=project_icon,
                     project_icon_bg_color=project_icon_bg_color,
                     project_gradient=project_gradient,
                     project_tags=project_tags,
                     new_folder_id=new_folder.id,
+                    owner_id=superuser.id # Pass superuser's ID
                 )
+                
+                # Grant OWNER permission for the new starter flow to the superuser
+                await permission_service.grant_permission(
+                    user_id=superuser.id,
+                    resource_id=db_flow.id,
+                    resource_type=ResourceTypeEnum.FLOW,
+                    permission=PermissionTypeEnum.OWNER,
+                    db_session=session
+                )
+        
+        await session.commit() # Commit all new flows and their permissions at the end
 
 
 async def initialize_super_user_if_needed() -> None:

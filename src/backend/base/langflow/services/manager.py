@@ -105,7 +105,12 @@ class ServiceManager:
         from langflow.services.factory import ServiceFactory
         from langflow.services.schema import ServiceType
 
-        service_names = [ServiceType(service_type).value.replace("_service", "") for service_type in ServiceType]
+        # Exclude PERMISSION_SERVICE from dynamic loading as it will be added manually
+        service_names = [
+            ServiceType(service_type).value.replace("_service", "")
+            for service_type in ServiceType
+            if service_type != ServiceType.PERMISSION_SERVICE
+        ]
         base_module = "langflow.services"
         factories = []
 
@@ -124,6 +129,18 @@ class ServiceManager:
                 logger.exception(exc)
                 msg = f"Could not initialize services. Please check your settings. Error in {name}."
                 raise RuntimeError(msg) from exc
+        
+        # Manually add PermissionServiceFactory
+        try:
+            from langflow.services.permission.factory import PermissionServiceFactory
+            factories.append(PermissionServiceFactory())
+        except ImportError as exc:
+            logger.exception("Failed to import PermissionServiceFactory manually.")
+            # Optionally, re-raise or handle as critical error
+            # For now, logging the exception, consistent with loop above.
+            msg = "Could not initialize PermissionService. Please check your settings."
+            raise RuntimeError(msg) from exc
+
 
         return factories
 

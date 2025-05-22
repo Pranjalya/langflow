@@ -17,6 +17,7 @@ from langflow.services.auth.utils import get_current_active_user
 from langflow.services.database.models import User
 from langflow.services.database.models.flow import Flow
 from langflow.services.database.models.message import MessageTable
+from langflow.services.database.models.permission.model import UserResourcePermission, ResourceTypeEnum # Added
 from langflow.services.database.models.transactions.model import TransactionTable
 from langflow.services.database.models.vertex_builds.model import VertexBuildTable
 from langflow.services.deps import get_session, session_scope
@@ -305,9 +306,19 @@ async def cascade_delete_flow(session: AsyncSession, flow_id: uuid.UUID) -> None
         await session.exec(delete(MessageTable).where(MessageTable.flow_id == flow_id))
         await session.exec(delete(TransactionTable).where(TransactionTable.flow_id == flow_id))
         await session.exec(delete(VertexBuildTable).where(VertexBuildTable.flow_id == flow_id))
+
+        # Add this:
+        await session.exec(
+            delete(UserResourcePermission)
+            .where(UserResourcePermission.resource_id == flow_id)
+            .where(UserResourcePermission.resource_type == ResourceTypeEnum.FLOW)
+        )
+        
         await session.exec(delete(Flow).where(Flow.id == flow_id))
     except Exception as e:
         msg = f"Unable to cascade delete flow: {flow_id}"
+        # Consider logging the original exception e as well
+        logger.error(f"Error during cascade delete for flow {flow_id}: {e}")
         raise RuntimeError(msg, e) from e
 
 
