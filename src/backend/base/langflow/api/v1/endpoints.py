@@ -49,9 +49,14 @@ from langflow.services.settings.feature_flags import FEATURE_FLAGS
 from langflow.services.telemetry.schema import RunPayload
 from langflow.utils.compression import compress_response
 from langflow.utils.version import get_version_info
+from langflow.services.permission.service import PermissionService
+from langflow.database.models.permission.model import PermissionType, ResourceType, ResourcePermission
+from pydantic import BaseModel
+from langflow.services.database.models.folder.model import Folder
+from langflow.services.database.models.folder.constants import DEFAULT_FOLDER_NAME
 
 if TYPE_CHECKING:
-    from langflow.services.event_manager import EventManager
+    from langflow.events.event_manager import EventManager
     from langflow.services.settings.service import SettingsService
 
 router = APIRouter(tags=["Base"])
@@ -756,3 +761,190 @@ async def get_config():
         }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+class PermissionGrantRequest(BaseModel):
+    grantee_user_id: str
+    permission_type: PermissionType
+
+
+# --- Permission Management Endpoints ---
+@router.post("/folders/{folder_id}/permissions")
+async def grant_folder_permission(
+    folder_id: str,
+    request: PermissionGrantRequest,
+    session: DbSession,
+    current_user: CurrentActiveUser,
+):
+    service = PermissionService(session)
+    try:
+        # Convert string ID to UUID
+        grantee_id = UUID(request.grantee_user_id)
+        # Get the grantee user
+        grantee = await session.get(User, grantee_id)
+        if not grantee:
+            raise HTTPException(status_code=404, detail="Grantee user not found")
+            
+        await service.grant_permission(
+            grantor=current_user,
+            grantee=grantee,
+            resource_id=folder_id,
+            resource_type=ResourceType.FOLDER,
+            permission_type=request.permission_type,
+        )
+        return {"detail": "Permission granted"}
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user ID format")
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+@router.delete("/folders/{folder_id}/permissions/{grantee_user_id}/{permission_type}")
+async def revoke_folder_permission(
+    folder_id: str,
+    grantee_user_id: str,
+    permission_type: PermissionType,
+    session: DbSession,
+    current_user: CurrentActiveUser,
+):
+    service = PermissionService(session)
+    try:
+        await service.revoke_permission(
+            revoker=current_user,
+            grantee_id=grantee_user_id,
+            resource_id=folder_id,
+            resource_type=ResourceType.FOLDER,
+            permission_type=permission_type,
+        )
+        return {"detail": "Permission revoked"}
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+@router.post("/flows/{flow_id}/permissions")
+async def grant_flow_permission(
+    flow_id: str,
+    request: PermissionGrantRequest,
+    session: DbSession,
+    current_user: CurrentActiveUser,
+):
+    service = PermissionService(session)
+    try:
+        # Convert string IDs to UUID
+        grantee_id = UUID(request.grantee_user_id)
+        flow_uuid = UUID(flow_id)
+        
+        # Get the grantee user
+        grantee = await session.get(User, grantee_id)
+        if not grantee:
+            raise HTTPException(status_code=404, detail="Grantee user not found")
+            
+        # Get the flow first to check ownership
+        flow = await session.get(Flow, flow_uuid)
+        if not flow:
+            raise HTTPException(status_code=404, detail="Flow not found")
+
+        # Grant permission
+        await service.grant_permission(
+            grantor=current_user,
+            grantee=grantee,
+            resource_id=flow_id,
+            resource_type=ResourceType.FLOW,
+            permission_type=request.permission_type,
+        )
+
+        # Get the grantee's My Projects folder
+        stmt = select(Folder).where(
+            Folder.name == DEFAULT_FOLDER_NAME,
+            Folder.user_id == grantee_id
+        )
+        default_folder = (await session.exec(stmt)).first()
+
+        if not default_folder:
+            # Create My Projects folder if it doesn't exist
+            default_folder = Folder(
+                name=DEFAULT_FOLDER_NAME,
+                description="Manage your own flows. Download and upload projects.",
+                user_id=grantee_id
+            )
+            session.add(default_folder)
+            await session.commit()
+            await session.refresh(default_folder)
+
+        # Create a copy of the flow for the grantee
+        flow_copy = Flow(
+            name=flow.name,
+            description=flow.description,
+            data=flow.data,
+            user_id=grantee_id,
+            folder_id=default_folder.id,
+            is_component=flow.is_component,
+            icon=flow.icon,
+            icon_bg_color=flow.icon_bg_color,
+            gradient=flow.gradient,
+            tags=flow.tags,
+            locked=flow.locked,
+            webhook=flow.webhook,
+            endpoint_name=flow.endpoint_name,
+            mcp_enabled=flow.mcp_enabled,
+            action_name=flow.action_name,
+            action_description=flow.action_description,
+            access_type=flow.access_type
+        )
+        session.add(flow_copy)
+        await session.commit()
+
+        return {"detail": "Permission granted"}
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+@router.delete("/flows/{flow_id}/permissions/{grantee_user_id}/{permission_type}")
+async def revoke_flow_permission(
+    flow_id: str,
+    grantee_user_id: str,
+    permission_type: PermissionType,
+    session: DbSession,
+    current_user: CurrentActiveUser,
+):
+    service = PermissionService(session)
+    try:
+        await service.revoke_permission(
+            revoker=current_user,
+            grantee_id=grantee_user_id,
+            resource_id=flow_id,
+            resource_type=ResourceType.FLOW,
+            permission_type=permission_type,
+        )
+        return {"detail": "Permission revoked"}
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+@router.get("/{resource_type}/{resource_id}/permissions")
+async def get_resource_permissions(
+    resource_type: ResourceType,
+    resource_id: str,
+    session: DbSession,
+    current_user: CurrentActiveUser,
+):
+    service = PermissionService(session)
+    try:
+        # Check if user has permission to view permissions
+        has_perm = await service.has_permission(
+            user=current_user,
+            resource_id=resource_id,
+            resource_type=resource_type,
+            permission_type=PermissionType.MANAGE_PERMISSIONS,
+        )
+        if not has_perm:
+            raise HTTPException(status_code=403, detail="Permission denied")
+
+        # Get all permissions for the resource
+        query = select(ResourcePermission).where(
+            ResourcePermission.resource_id == resource_id,
+            ResourcePermission.resource_type == resource_type.value,
+        )
+        result = await session.exec(query)
+        permissions = result.all()
+        return permissions
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))

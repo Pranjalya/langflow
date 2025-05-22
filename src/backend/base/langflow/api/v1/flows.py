@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFil
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import StreamingResponse
 from fastapi_pagination import Page, Params
-from fastapi_pagination.ext.sqlmodel import apaginate
+from fastapi_pagination.ext.sqlmodel import paginate
 from sqlmodel import and_, col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -32,6 +32,8 @@ from langflow.services.database.models.folder.model import Folder
 from langflow.services.deps import get_settings_service
 from langflow.services.settings.service import SettingsService
 from langflow.utils.compression import compress_response
+from langflow.services.permission.service import PermissionService
+from langflow.database.models.permission.model import PermissionType, ResourceType, ResourcePermission
 
 # build router
 router = APIRouter(prefix="/flows", tags=["Flows"])
@@ -143,28 +145,10 @@ async def create_flow(
     flow: FlowCreate,
     current_user: CurrentActiveUser,
 ):
-    try:
-        db_flow = await _new_flow(session=session, flow=flow, user_id=current_user.id)
-        await session.commit()
-        await session.refresh(db_flow)
-
-        await _save_flow_to_fs(db_flow)
-
-    except Exception as e:
-        if "UNIQUE constraint failed" in str(e):
-            # Get the name of the column that failed
-            columns = str(e).split("UNIQUE constraint failed: ")[1].split(".")[1].split("\n")[0]
-            # UNIQUE constraint failed: flow.user_id, flow.name
-            # or UNIQUE constraint failed: flow.name
-            # if the column has id in it, we want the other column
-            column = columns.split(",")[1] if "id" in columns.split(",")[0] else columns.split(",")[0]
-
-            raise HTTPException(
-                status_code=400, detail=f"{column.capitalize().replace('_', ' ')} must be unique"
-            ) from e
-        if isinstance(e, HTTPException):
-            raise
-        raise HTTPException(status_code=500, detail=str(e)) from e
+    db_flow = await _new_flow(session=session, flow=flow, user_id=current_user.id)
+    await session.commit()
+    await session.refresh(db_flow)
+    await _save_flow_to_fs(db_flow)
     return db_flow
 
 
@@ -180,26 +164,17 @@ async def read_flows(
     params: Annotated[Params, Depends()],
     header_flows: bool = False,
 ):
-    """Retrieve a list of flows with pagination support.
+    if folder_id:
+        service = PermissionService(session)
+        has_perm = await service.has_permission(
+            user=current_user,
+            resource_id=folder_id,
+            resource_type=ResourceType.FOLDER,
+            permission_type=PermissionType.READ,
+        )
+        if not has_perm:
+            raise HTTPException(status_code=403, detail="Permission denied for folder")
 
-    Args:
-        current_user (User): The current authenticated user.
-        session (Session): The database session.
-        settings_service (SettingsService): The settings service.
-        components_only (bool, optional): Whether to return only components. Defaults to False.
-
-        get_all (bool, optional): Whether to return all flows without pagination. Defaults to True.
-        **This field must be True because of backward compatibility with the frontend - Release: 1.0.20**
-
-        folder_id (UUID, optional): The project ID. Defaults to None.
-        params (Params): Pagination parameters.
-        remove_example_flows (bool, optional): Whether to remove example flows. Defaults to False.
-        header_flows (bool, optional): Whether to return only specific headers of the flows. Defaults to False.
-
-    Returns:
-        list[FlowRead] | Page[FlowRead] | list[FlowHeader]
-        A list of flows or a paginated response containing the list of flows or a list of flow headers.
-    """
     try:
         auth_settings = get_settings_service().auth_settings
 
@@ -218,12 +193,27 @@ async def read_flows(
         if not folder_id:
             folder_id = default_folder_id
 
+        # Get flows where user has READ permission
+        permission_query = select(ResourcePermission).where(
+            ResourcePermission.grantee_user_id == str(current_user.id),
+            ResourcePermission.resource_type == ResourceType.FLOW.value,
+            ResourcePermission.permission_type == PermissionType.READ.value,
+        )
+        permission_result = await session.exec(permission_query)
+        permissions = permission_result.all()
+        flow_ids_with_permission = [UUID(perm.resource_id) for perm in permissions]
+
         if auth_settings.AUTO_LOGIN:
             stmt = select(Flow).where(
-                (Flow.user_id == None) | (Flow.user_id == current_user.id)  # noqa: E711
+                (Flow.user_id == None) |  # noqa: E711
+                (Flow.user_id == current_user.id) |
+                (Flow.id.in_(flow_ids_with_permission))
             )
         else:
-            stmt = select(Flow).where(Flow.user_id == current_user.id)
+            stmt = select(Flow).where(
+                (Flow.user_id == current_user.id) |
+                (Flow.id.in_(flow_ids_with_permission))
+            )
 
         if remove_example_flows:
             stmt = stmt.where(Flow.folder_id != starter_folder_id)
@@ -254,7 +244,7 @@ async def read_flows(
             warnings.filterwarnings(
                 "ignore", category=DeprecationWarning, module=r"fastapi_pagination\.ext\.sqlalchemy"
             )
-            return await apaginate(session, stmt, params=params)
+            return await paginate(session, stmt, params=params)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -285,7 +275,16 @@ async def read_flow(
     flow_id: UUID,
     current_user: CurrentActiveUser,
 ):
-    """Read a flow."""
+    service = PermissionService(session)
+    has_perm = await service.has_permission(
+        user=current_user,
+        resource_id=flow_id,
+        resource_type=ResourceType.FLOW,
+        permission_type=PermissionType.READ,
+    )
+    print(service, has_perm)
+    if not has_perm:
+        raise HTTPException(status_code=403, detail="Permission denied")
     if user_flow := await _read_flow(session, flow_id, current_user.id, get_settings_service()):
         return user_flow
     raise HTTPException(status_code=404, detail="Flow not found")
@@ -314,6 +313,15 @@ async def update_flow(
     flow: FlowUpdate,
     current_user: CurrentActiveUser,
 ):
+    service = PermissionService(session)
+    has_perm = await service.has_permission(
+        user=current_user,
+        resource_id=flow_id,
+        resource_type=ResourceType.FLOW,
+        permission_type=PermissionType.WRITE,
+    )
+    if not has_perm:
+        raise HTTPException(status_code=403, detail="Permission denied")
     """Update a flow."""
     settings_service = get_settings_service()
     try:
@@ -346,7 +354,9 @@ async def update_flow(
         db_flow.updated_at = datetime.now(timezone.utc)
 
         if db_flow.folder_id is None:
-            default_folder = (await session.exec(select(Folder).where(Folder.name == DEFAULT_FOLDER_NAME))).first()
+            default_folder_query = select(Folder).where(Folder.name == DEFAULT_FOLDER_NAME)
+            default_folder_result = await session.exec(default_folder_query)
+            default_folder = default_folder_result.first()
             if default_folder:
                 db_flow.folder_id = default_folder.id
 
@@ -382,6 +392,15 @@ async def delete_flow(
     flow_id: UUID,
     current_user: CurrentActiveUser,
 ):
+    service = PermissionService(session)
+    has_perm = await service.has_permission(
+        user=current_user,
+        resource_id=flow_id,
+        resource_type=ResourceType.FLOW,
+        permission_type=PermissionType.DELETE,
+    )
+    if not has_perm:
+        raise HTTPException(status_code=403, detail="Permission denied")
     """Delete a flow."""
     flow = await _read_flow(
         session=session,

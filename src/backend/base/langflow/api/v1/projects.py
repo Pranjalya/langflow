@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFil
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import StreamingResponse
 from fastapi_pagination import Params
-from fastapi_pagination.ext.sqlmodel import apaginate
+from fastapi_pagination.ext.sqlmodel import paginate
 from sqlalchemy import or_, update
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
@@ -31,6 +31,8 @@ from langflow.services.database.models.folder.model import (
     FolderUpdate,
 )
 from langflow.services.database.models.folder.pagination_model import FolderWithPaginatedFlows
+from langflow.services.permission.service import PermissionService
+from langflow.database.models.permission.model import PermissionType, ResourceType, ResourcePermission
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
@@ -42,6 +44,9 @@ async def create_project(
     project: FolderCreate,
     current_user: CurrentActiveUser,
 ):
+    # Optionally, check if user can create folders (projects)
+    # For now, allow all authenticated users
+    # If you want to restrict, add a permission check here
     try:
         new_project = Folder.model_validate(project, from_attributes=True)
         new_project.user_id = current_user.id
@@ -99,6 +104,8 @@ async def read_projects(
     session: DbSession,
     current_user: CurrentActiveUser,
 ):
+    # Optionally, check READ permission for each project in the list
+    # For now, allow all authenticated users to list their own projects
     try:
         projects = (
             await session.exec(
@@ -124,12 +131,38 @@ async def read_project(
     is_flow: bool = False,
     search: str = "",
 ):
+    service = PermissionService(session)
+    has_perm = await service.has_permission(
+        user=current_user,
+        resource_id=project_id,
+        resource_type=ResourceType.FOLDER,
+        permission_type=PermissionType.READ,
+    )
+    if not has_perm:
+        raise HTTPException(status_code=403, detail="Permission denied")
     try:
+        # Get flows where user has READ permission
+        permission_query = select(ResourcePermission).where(
+            ResourcePermission.grantee_user_id == str(current_user.id),
+            ResourcePermission.resource_type == ResourceType.FLOW.value,
+            ResourcePermission.permission_type == PermissionType.READ.value,
+        )
+        permission_result = await session.exec(permission_query)
+        permissions = permission_result.all()
+        flow_ids_with_permission = [UUID(perm.resource_id) for perm in permissions]
+
+        # Get the project with flows where user has permission
         project = (
             await session.exec(
                 select(Folder)
                 .options(selectinload(Folder.flows))
-                .where(Folder.id == project_id, Folder.user_id == current_user.id)
+                .where(
+                    Folder.id == project_id,
+                    or_(
+                        Folder.user_id == current_user.id,
+                        Flow.id.in_(flow_ids_with_permission)
+                    )
+                )
             )
         ).first()
     except Exception as e:
@@ -142,7 +175,13 @@ async def read_project(
 
     try:
         if params and params.page and params.size:
-            stmt = select(Flow).where(Flow.folder_id == project_id)
+            stmt = select(Flow).where(
+                Flow.folder_id == project_id,
+                or_(
+                    Flow.user_id == current_user.id,
+                    Flow.id.in_(flow_ids_with_permission)
+                )
+            )
 
             if Flow.updated_at is not None:
                 stmt = stmt.order_by(Flow.updated_at.desc())  # type: ignore[attr-defined]
@@ -158,15 +197,16 @@ async def read_project(
                 warnings.filterwarnings(
                     "ignore", category=DeprecationWarning, module=r"fastapi_pagination\.ext\.sqlalchemy"
                 )
-                paginated_flows = await apaginate(session, stmt, params=params)
+                paginated_flows = await paginate(session, stmt, params=params)
 
             return FolderWithPaginatedFlows(folder=FolderRead.model_validate(project), flows=paginated_flows)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
-    flows_from_current_user_in_project = [flow for flow in project.flows if flow.user_id == current_user.id]
-    project.flows = flows_from_current_user_in_project
+    # Show flows that the user owns or has permission to access
+    flows_with_permission = [flow for flow in project.flows if flow.user_id == current_user.id or flow.id in flow_ids_with_permission]
+    project.flows = flows_with_permission
     return project
 
 
@@ -178,6 +218,15 @@ async def update_project(
     project: FolderUpdate,  # Assuming FolderUpdate is a Pydantic model defining updatable fields
     current_user: CurrentActiveUser,
 ):
+    service = PermissionService(session)
+    has_perm = await service.has_permission(
+        user=current_user,
+        resource_id=project_id,
+        resource_type=ResourceType.FOLDER,
+        permission_type=PermissionType.WRITE,
+    )
+    if not has_perm:
+        raise HTTPException(status_code=403, detail="Permission denied")
     try:
         existing_project = (
             await session.exec(select(Folder).where(Folder.id == project_id, Folder.user_id == current_user.id))
@@ -238,6 +287,15 @@ async def delete_project(
     project_id: UUID,
     current_user: CurrentActiveUser,
 ):
+    service = PermissionService(session)
+    has_perm = await service.has_permission(
+        user=current_user,
+        resource_id=project_id,
+        resource_type=ResourceType.FOLDER,
+        permission_type=PermissionType.DELETE,
+    )
+    if not has_perm:
+        raise HTTPException(status_code=403, detail="Permission denied")
     try:
         flows = (
             await session.exec(select(Flow).where(Flow.folder_id == project_id, Flow.user_id == current_user.id))

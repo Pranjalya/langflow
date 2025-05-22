@@ -3,7 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi_pagination import Page, Params
-from fastapi_pagination.ext.sqlmodel import apaginate
+from fastapi_pagination.ext.sqlmodel import paginate
 from sqlalchemy import delete
 from sqlmodel import col, select
 
@@ -177,6 +177,6 @@ async def get_transactions(
             warnings.filterwarnings(
                 "ignore", category=DeprecationWarning, module=r"fastapi_pagination\.ext\.sqlalchemy"
             )
-            return await apaginate(session, stmt, params=params, transformer=transform_transaction_table)
+            return await paginate(session, stmt, params=params, transformer=transform_transaction_table)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
