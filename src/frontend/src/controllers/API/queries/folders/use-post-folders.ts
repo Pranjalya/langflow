@@ -15,12 +15,15 @@ export const usePostFolders: useMutationFunctionType<
   const { mutate, queryClient } = UseRequestProcessor();
 
   const addFoldersFn = async (newFolder: IPostAddFolders): Promise<void> => {
-    const payload = {
+    const payload: any = {
       name: newFolder.data.name,
       description: newFolder.data.description,
       flows_list: newFolder.data.flows ?? [],
       components_list: newFolder.data.components ?? [],
     };
+    if (newFolder.data.users) {
+      payload.users = newFolder.data.users;
+    }
 
     const res = await api.post(`${getURL("PROJECTS")}/`, payload);
     return res.data;

@@ -44,12 +44,14 @@ async def create_project(
     current_user: CurrentActiveUser,
 ):
     try:
-        new_project = Folder.model_validate(project, from_attributes=True)
+        project_data = project.model_dump(exclude_unset=True)
+        project_data.pop("users", None)  # Remove users from the dict
+        new_project = Folder(**project_data)
         new_project.user_id = current_user.id
         # Add shared users if provided
         if project.users:
             users = (await session.exec(select(User).where(User.id.in_(project.users)))).all()
-            new_project.users = users
+            new_project.users = users  # Assign model instances, not UUIDs
         # First check if the project.name is unique
         # there might be flows with name like: "MyFlow", "MyFlow (1)", "MyFlow (2)"
         # so we need to check if the name is unique with `like` operator
@@ -105,14 +107,22 @@ async def read_projects(
     current_user: CurrentActiveUser,
 ):
     try:
-        projects = (
-            await session.exec(
-                select(Folder).where(
-                    or_(Folder.user_id == current_user.id, Folder.user_id == None)  # noqa: E711
-                )
-            )
-        ).all()
-        projects = [project for project in projects if project.name != STARTER_FOLDER_NAME]
+        # Folders owned by the user or public
+        owned_or_public_stmt = select(Folder).where(
+            or_(Folder.user_id == current_user.id, Folder.user_id == None)
+        )
+
+        # Folders shared with the user
+        shared_stmt = select(Folder).join(Folder.users).where(User.id == current_user.id)
+
+        # Execute both queries
+        owned_or_public_projects = (await session.exec(owned_or_public_stmt)).all()
+        shared_projects = (await session.exec(shared_stmt)).all()
+
+        # Combine and deduplicate
+        all_projects = {project.id: project for project in owned_or_public_projects + shared_projects}
+        projects = [project for project in all_projects.values() if project.name != STARTER_FOLDER_NAME]
+
         return sorted(projects, key=lambda x: x.name != DEFAULT_FOLDER_NAME)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e

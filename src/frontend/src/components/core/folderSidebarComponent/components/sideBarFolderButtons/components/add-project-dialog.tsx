@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import MultiselectComponent from "@/components/core/parameterRenderComponent/components/multiselectComponent";
 import { useEffect, useState } from "react";
 import { useGetUsers } from "@/controllers/API/queries/auth/use-get-users-page";
+import useAuthStore from "@/stores/authStore";
 
 interface AddProjectDialogProps {
   open: boolean;
@@ -11,16 +12,22 @@ interface AddProjectDialogProps {
   isLoading: boolean;
 }
 
-export default function AddProjectDialog({ open, onOpenChange, onSubmit, isLoading }: AddProjectDialogProps) {
+export const AddProjectDialog = ({ open, onOpenChange, onSubmit, isLoading }: AddProjectDialogProps) => {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [users, setUsers] = useState<string[]>([]);
   const [touched, setTouched] = useState(false);
 
+  // Get current user
+  const userData = useAuthStore((state) => state.userData);
+  const currentUserId = userData?.id;
+  const currentUsername = userData?.username;
+
   // Fetch users
   const { mutate: fetchUsers, data: usersData, status: usersStatus } = useGetUsers({});
-  const [userOptions, setUserOptions] = useState<string[]>([]);
-  const [userMap, setUserMap] = useState<Record<string, string>>({});
+  const [userOptions, setUserOptions] = useState<{ id: string; username: string }[]>([]);
+  const [usernameToId, setUsernameToId] = useState<Record<string, string>>({});
+  const [idToUsername, setIdToUsername] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (open) {
@@ -29,20 +36,52 @@ export default function AddProjectDialog({ open, onOpenChange, onSubmit, isLoadi
   }, [open, fetchUsers]);
 
   useEffect(() => {
-    if (usersData && Array.isArray(usersData)) {
-      setUserOptions(usersData.map((u) => u.id));
-      setUserMap(Object.fromEntries(usersData.map((u) => [u.id, u.username])));
+    if (usersData && Array.isArray(usersData["users"])) {
+      setUserOptions(usersData["users"].map((u) => ({ id: u.id, username: u.username })));
+      setUsernameToId(Object.fromEntries(usersData["users"].map((u) => [u.username, u.id])));
+      setIdToUsername(Object.fromEntries(usersData["users"].map((u) => [u.id, u.username])));
     }
   }, [usersData]);
 
+  // Ensure current user is always selected when dialog opens
   useEffect(() => {
+    if (open && currentUserId) {
+      setUsers((prev) => {
+        if (!prev.includes(currentUserId)) {
+          return [currentUserId, ...prev.filter((id) => id !== currentUserId)];
+        }
+        return prev;
+      });
+    }
     if (!open) {
       setName("");
       setDescription("");
-      setUsers([]);
+      setUsers(currentUserId ? [currentUserId] : []);
       setTouched(false);
     }
-  }, [open]);
+  }, [open, currentUserId]);
+
+  // For the dropdown: use usernames as options
+  const usernameOptions = userOptions.map((u) => u.username);
+  // For the dropdown value: convert selected user ids to usernames
+  const selectedUsernames = users.map((id) => idToUsername[id]).filter(Boolean);
+
+  // Prevent removal of current user (by username)
+  const handleUsersChange = (value: string[]) => {
+    if (!currentUserId || !currentUsername) return;
+    // Always keep current user's username in the list
+    if (!value.includes(currentUsername)) {
+      value = [currentUsername, ...value];
+    }
+    // Convert usernames to ids, filter out any not in usernameToId
+    const newIds = value.map((username) => usernameToId[username]).filter(Boolean);
+    // Always keep current user id
+    if (!newIds.includes(currentUserId)) {
+      setUsers([currentUserId, ...newIds]);
+    } else {
+      setUsers(newIds);
+    }
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -86,13 +125,13 @@ export default function AddProjectDialog({ open, onOpenChange, onSubmit, isLoadi
             <label className="font-medium text-sm">Users with access</label>
             <MultiselectComponent
               disabled={usersStatus === "pending"}
-              value={users}
-              options={userOptions.map(id => userMap[id] ? `${id}::${userMap[id]}` : id)}
-              handleOnNewValue={({ value }) => setUsers(value.map(v => v.split("::")[0]))}
+              value={selectedUsernames}
+              options={usernameOptions}
+              handleOnNewValue={({ value }) => handleUsersChange(value)}
               id="users-with-access"
               editNode={false}
             />
-            <span className="text-xs text-muted-foreground">Search and select users to grant access.</span>
+            <span className="text-xs text-muted-foreground">Search and select users to grant access. You (the creator) are always included.</span>
           </div>
           <DialogFooter>
             <Button

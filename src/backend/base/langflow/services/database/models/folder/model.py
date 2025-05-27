@@ -6,6 +6,7 @@ from sqlmodel import Column, Field, Relationship, SQLModel
 
 from langflow.services.database.models.flow.model import Flow, FlowRead
 from langflow.services.database.models.folder.user_link import folder_user_link
+from langflow.services.database.models.user.model import User
 
 
 class FolderBase(SQLModel):

@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from langflow.services.database.models.api_key import ApiKey
     from langflow.services.database.models.flow import Flow
     from langflow.services.database.models.variable import Variable
+    from langflow.services.database.models.folder import Folder
 
 
 class UserOptin(BaseModel):
