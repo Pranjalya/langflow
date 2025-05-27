@@ -101,16 +101,7 @@ export default function FlowPage({ view }: { view?: boolean }): JSX.Element {
   useEffect(() => {
     const awaitgetTypes = async () => {
       if (flows && currentFlowId === "" && Object.keys(types).length > 0) {
-        const isAnExistingFlow = flows.find((flow) => flow.id === id);
-
-        if (!isAnExistingFlow) {
-          navigate("/all");
-          return;
-        }
-
-        const isAnExistingFlowId = isAnExistingFlow.id;
-
-        await getFlowToAddToCanvas(isAnExistingFlowId);
+        await getFlowToAddToCanvas(id!);
       }
     };
     awaitgetTypes();

@@ -17,6 +17,7 @@ from fastapi.responses import StreamingResponse
 from fastapi_pagination import Page, Params
 from fastapi_pagination.ext.sqlmodel import apaginate
 from sqlmodel import and_, col, select
+from sqlalchemy.orm import selectinload
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from langflow.api.utils import CurrentActiveUser, DbSession, cascade_delete_flow, remove_api_keys, validate_is_component
@@ -286,9 +287,21 @@ async def read_flow(
     current_user: CurrentActiveUser,
 ):
     """Read a flow."""
-    if user_flow := await _read_flow(session, flow_id, current_user.id, get_settings_service()):
-        return user_flow
-    raise HTTPException(status_code=404, detail="Flow not found")
+    # Fetch the flow and its folder
+    flow = (await session.exec(select(Flow).where(Flow.id == flow_id))).first()
+    if not flow:
+        raise HTTPException(status_code=404, detail="Flow not found")
+
+    # Fetch the folder and check access
+    folder = (await session.exec(select(Folder).where(Folder.id == flow.folder_id).options(selectinload(Folder.users)))).first()
+    if not folder:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Check if the user is the owner or in the shared users list
+    if not (folder.user_id == current_user.id or any(user.id == current_user.id for user in folder.users)):
+        raise HTTPException(status_code=403, detail="You do not have access to this flow.")
+
+    return flow
 
 
 @router.get("/public_flow/{flow_id}", response_model=FlowRead, status_code=200)

@@ -144,7 +144,13 @@ async def read_project(
             await session.exec(
                 select(Folder)
                 .options(selectinload(Folder.flows))
-                .where(Folder.id == project_id, Folder.user_id == current_user.id)
+                .where(
+                    Folder.id == project_id,
+                    or_(
+                        Folder.user_id == current_user.id,
+                        Folder.users.any(User.id == current_user.id)
+                    )
+                )
             )
         ).first()
     except Exception as e:
@@ -180,8 +186,6 @@ async def read_project(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
-    flows_from_current_user_in_project = [flow for flow in project.flows if flow.user_id == current_user.id]
-    project.flows = flows_from_current_user_in_project
     return project
 
 
