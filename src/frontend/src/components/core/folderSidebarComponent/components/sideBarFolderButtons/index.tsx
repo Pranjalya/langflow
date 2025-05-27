@@ -188,13 +188,14 @@ const SideBarFoldersButtonsComponent = ({
     );
   };
 
-  function addNewFolder() {
+  function addNewFolder(data?: { name: string; description: string; users: string[] }) {
     mutateAddFolder(
       {
         data: {
-          name: "New Project",
+          name: data?.name || "New Project",
           parent_id: null,
-          description: "",
+          description: data?.description || "",
+          users: data?.users || [],
         },
       },
       {

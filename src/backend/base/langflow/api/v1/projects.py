@@ -31,6 +31,7 @@ from langflow.services.database.models.folder.model import (
     FolderUpdate,
 )
 from langflow.services.database.models.folder.pagination_model import FolderWithPaginatedFlows
+from langflow.services.database.models.user.model import User
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
@@ -45,6 +46,10 @@ async def create_project(
     try:
         new_project = Folder.model_validate(project, from_attributes=True)
         new_project.user_id = current_user.id
+        # Add shared users if provided
+        if project.users:
+            users = (await session.exec(select(User).where(User.id.in_(project.users)))).all()
+            new_project.users = users
         # First check if the project.name is unique
         # there might be flows with name like: "MyFlow", "MyFlow (1)", "MyFlow (2)"
         # so we need to check if the name is unique with `like` operator
@@ -200,6 +205,10 @@ async def update_project(
         for key, value in project_data.items():
             if key not in {"components", "flows"}:
                 setattr(existing_project, key, value)
+        # Update shared users if provided
+        if project.users is not None:
+            users = (await session.exec(select(User).where(User.id.in_(project.users)))).all()
+            existing_project.users = users
         session.add(existing_project)
         await session.commit()
         await session.refresh(existing_project)

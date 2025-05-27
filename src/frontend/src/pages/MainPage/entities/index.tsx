@@ -33,6 +33,7 @@ export type AddFolderType = {
   parent_id: string | null;
   flows?: string[];
   components?: string[];
+  users?: string[];
 };
 
 export type StarterProjectsType = {

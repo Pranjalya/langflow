@@ -8,6 +8,7 @@ import { Separator } from "@radix-ui/react-separator";
 import { useState } from "react";
 import { AddFolderButton } from "./add-folder-button";
 import { UploadFolderButton } from "./upload-folder-button";
+import { AddProjectDialog } from "./add-project-dialog";
 
 export const HeaderButtons = ({
   handleUploadFlowsToFolder,
@@ -18,7 +19,7 @@ export const HeaderButtons = ({
   handleUploadFlowsToFolder: () => void;
   isUpdatingFolder: boolean;
   isPending: boolean;
-  addNewFolder: () => void;
+  addNewFolder: (data?: any) => void;
 }) => {
   const userData = useAuthStore((state) => state.userData);
   const userDismissedDialog = userData?.optins?.dialog_dismissed;
@@ -26,6 +27,7 @@ export const HeaderButtons = ({
   const isDiscordJoined = userData?.optins?.discord_clicked;
   const [isDismissedDialog, setIsDismissedDialog] =
     useState(userDismissedDialog);
+  const [openAddDialog, setOpenAddDialog] = useState(false);
 
   const { mutate: updateUser } = useUpdateUser();
 
@@ -71,12 +73,18 @@ export const HeaderButtons = ({
             disabled={isUpdatingFolder}
           />
           <AddFolderButton
-            onClick={addNewFolder}
+            onClick={() => setOpenAddDialog(true)}
             disabled={isUpdatingFolder}
             loading={isPending}
           />
         </div>
       </div>
+      <AddProjectDialog
+        open={openAddDialog}
+        onOpenChange={setOpenAddDialog}
+        onSubmit={addNewFolder}
+        isLoading={isPending}
+      />
     </>
   );
 };

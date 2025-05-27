@@ -7,11 +7,11 @@ from sqlalchemy import JSON, Column
 from sqlmodel import Field, Relationship, SQLModel
 
 from langflow.schema.serialize import UUIDstr
+from langflow.services.database.models.folder.user_link import folder_user_link
 
 if TYPE_CHECKING:
     from langflow.services.database.models.api_key import ApiKey
     from langflow.services.database.models.flow import Flow
-    from langflow.services.database.models.folder import Folder
     from langflow.services.database.models.variable import Variable
 
 
@@ -45,6 +45,10 @@ class User(SQLModel, table=True):  # type: ignore[call-arg]
     folders: list["Folder"] = Relationship(
         back_populates="user",
         sa_relationship_kwargs={"cascade": "delete"},
+    )
+    shared_folders: list["Folder"] = Relationship(
+        back_populates="users",
+        link_model=folder_user_link,
     )
     optins: dict[str, Any] | None = Field(
         sa_column=Column(JSON, default=lambda: UserOptin().model_dump(), nullable=True)

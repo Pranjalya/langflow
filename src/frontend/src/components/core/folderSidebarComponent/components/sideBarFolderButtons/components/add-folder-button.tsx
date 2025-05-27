@@ -20,6 +20,7 @@ export const AddFolderButton = ({
       data-testid="add-project-button"
       disabled={disabled}
       loading={loading}
+      type="button"
     >
       <IconComponent name="Plus" className="h-4 w-4" />
     </Button>
