@@ -19,6 +19,7 @@ export const URLs = {
   FLOWS: `flows`,
   FOLDERS: `projects`,
   PROJECTS: `projects`,
+  PROJECT_REQUESTS: `project-requests`,
   VARIABLES: `variables`,
   VALIDATE: `validate`,
   CONFIG: `config`,

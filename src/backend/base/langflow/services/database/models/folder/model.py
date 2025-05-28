@@ -5,8 +5,9 @@ from sqlalchemy import Text, UniqueConstraint, Table, Column as SAColumn, Foreig
 from sqlmodel import Column, Field, Relationship, SQLModel
 
 from langflow.services.database.models.flow.model import Flow, FlowRead
-from langflow.services.database.models.folder.user_link import folder_user_link
+# from langflow.services.database.models.folder.user_link import folder_user_link
 from langflow.services.database.models.user.model import User
+from langflow.services.database.models.resource_permission import ResourcePermission
 
 
 class FolderBase(SQLModel):
@@ -30,8 +31,17 @@ class Folder(FolderBase, table=True):  # type: ignore[call-arg]
     )
     users: list["User"] = Relationship(
         back_populates="shared_folders",
-        link_model=folder_user_link,
+        link_model=ResourcePermission,
+        sa_relationship_kwargs={
+            "primaryjoin": "Folder.id == ResourcePermission.resource_id",
+            "secondaryjoin": "User.id == ResourcePermission.grantee_id",
+            "viewonly": True,
+        },
     )
+    # users: list["User"] = Relationship(
+    #     back_populates="shared_folders",
+    #     link_model=folder_user_link,
+    # )
 
     __table_args__ = (UniqueConstraint("user_id", "name", name="unique_folder_name"),)
 
@@ -39,7 +49,7 @@ class Folder(FolderBase, table=True):  # type: ignore[call-arg]
 class FolderCreate(FolderBase):
     components_list: list[UUID] | None = None
     flows_list: list[UUID] | None = None
-    users: list[UUID] | None = None
+    users: list[UUID] = Field(default_factory=list)
 
 
 class FolderRead(FolderBase):
@@ -59,4 +69,4 @@ class FolderUpdate(SQLModel):
     parent_id: UUID | None = None
     components: list[UUID] = Field(default_factory=list)
     flows: list[UUID] = Field(default_factory=list)
-    users: list[UUID] | None = None
+    users: list[UUID] = Field(default_factory=list)

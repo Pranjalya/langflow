@@ -11,7 +11,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import StreamingResponse
 from fastapi_pagination import Params
 from fastapi_pagination.ext.sqlmodel import apaginate
-from sqlalchemy import or_, update
+from sqlalchemy import or_, update, and_
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
@@ -32,6 +32,7 @@ from langflow.services.database.models.folder.model import (
 )
 from langflow.services.database.models.folder.pagination_model import FolderWithPaginatedFlows
 from langflow.services.database.models.user.model import User
+from langflow.services.database.models.resource_permission import ResourcePermission
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
@@ -52,6 +53,18 @@ async def create_project(
         if project.users:
             users = (await session.exec(select(User).where(User.id.in_(project.users)))).all()
             new_project.users = users  # Assign model instances, not UUIDs
+            
+            # Create ResourcePermission entries for each user
+            for user in users:
+                permission = ResourcePermission(
+                    resource_id=new_project.id,
+                    grantor_id=current_user.id,
+                    grantee_id=user.id,
+                    permission_level='USER',
+                    resource_type='project'
+                )
+                session.add(permission)
+        
         # First check if the project.name is unique
         # there might be flows with name like: "MyFlow", "MyFlow (1)", "MyFlow (2)"
         # so we need to check if the name is unique with `like` operator
@@ -113,7 +126,11 @@ async def read_projects(
         )
 
         # Folders shared with the user
-        shared_stmt = select(Folder).join(Folder.users).where(User.id == current_user.id)
+        # shared_stmt = select(Folder).join(Folder.users).where(User.id == current_user.id)
+        shared_stmt = (select(Folder)
+                       .join(ResourcePermission, ResourcePermission.resource_id == Folder.id)
+                       .where(ResourcePermission.grantee_id == current_user.id)
+                       .where(ResourcePermission.resource_type == 'project'))
 
         # Execute both queries
         owned_or_public_projects = (await session.exec(owned_or_public_stmt)).all()
@@ -148,7 +165,11 @@ async def read_project(
                     Folder.id == project_id,
                     or_(
                         Folder.user_id == current_user.id,
-                        Folder.users.any(User.id == current_user.id)
+                        and_(
+                            ResourcePermission.resource_id == Folder.id,
+                            ResourcePermission.grantee_id == current_user.id,
+                            ResourcePermission.resource_type == 'project'
+                        )
                     )
                 )
             )
@@ -219,17 +240,55 @@ async def update_project(
         for key, value in project_data.items():
             if key not in {"components", "flows"}:
                 setattr(existing_project, key, value)
+        
         # Update shared users if provided
         if project.users is not None:
+            # Get current shared users
+            current_permissions = await session.exec(
+                select(ResourcePermission).where(
+                    ResourcePermission.resource_id == project_id,
+                    ResourcePermission.resource_type == 'project'
+                )
+            )
+            current_shared_users = {p.grantee_id for p in current_permissions}
+            
+            # Get new shared users
+            new_shared_users = set(project.users)
+            
+            # Remove permissions for users no longer shared with
+            users_to_remove = current_shared_users - new_shared_users
+            if users_to_remove:
+                await session.exec(
+                    select(ResourcePermission).where(
+                        ResourcePermission.resource_id == project_id,
+                        ResourcePermission.grantee_id.in_(users_to_remove),
+                        ResourcePermission.resource_type == 'project'
+                    )
+                )
+            
+            # Add permissions for new shared users
+            users_to_add = new_shared_users - current_shared_users
+            for user_id in users_to_add:
+                permission = ResourcePermission(
+                    resource_id=project_id,
+                    grantor_id=current_user.id,
+                    grantee_id=user_id,
+                    permission_level='USER',
+                    resource_type='project'
+                )
+                session.add(permission)
+            
+            # Update the users relationship
             users = (await session.exec(select(User).where(User.id.in_(project.users)))).all()
             existing_project.users = users
+
         session.add(existing_project)
         await session.commit()
         await session.refresh(existing_project)
 
         concat_project_components = project.components + project.flows
 
-        flows_ids = (await session.exec(select(Flow.id).where(Flow.folder_id == existing_project.id))).all()
+        flows_ids = (await session.exec(select(Flow.id).where(Flow.folder_id == project_id))).all()
 
         excluded_flows = list(set(flows_ids) - set(concat_project_components))
 
@@ -262,13 +321,6 @@ async def delete_project(
     current_user: CurrentActiveUser,
 ):
     try:
-        flows = (
-            await session.exec(select(Flow).where(Flow.folder_id == project_id, Flow.user_id == current_user.id))
-        ).all()
-        if len(flows) > 0:
-            for flow in flows:
-                await cascade_delete_flow(session, flow.id)
-
         project = (
             await session.exec(select(Folder).where(Folder.id == project_id, Folder.user_id == current_user.id))
         ).first()
@@ -279,9 +331,14 @@ async def delete_project(
         raise HTTPException(status_code=404, detail="Project not found")
 
     try:
+        # Delete all flows in the project
+        flows = (await session.exec(select(Flow).where(Flow.folder_id == project_id))).all()
+        for flow in flows:
+            await cascade_delete_flow(session, flow.id)
+
+        # Delete the project
         await session.delete(project)
         await session.commit()
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
@@ -293,44 +350,40 @@ async def download_file(
     project_id: UUID,
     current_user: CurrentActiveUser,
 ):
-    """Download all flows from project as a zip file."""
     try:
-        query = select(Folder).where(Folder.id == project_id, Folder.user_id == current_user.id)
-        result = await session.exec(query)
-        project = result.first()
+        project = (
+            await session.exec(select(Folder).where(Folder.id == project_id, Folder.user_id == current_user.id))
+        ).first()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
-        if not project:
-            raise HTTPException(status_code=404, detail="Project not found")
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
 
-        flows_query = select(Flow).where(Flow.folder_id == project_id)
-        flows_result = await session.exec(flows_query)
-        flows = [FlowRead.model_validate(flow, from_attributes=True) for flow in flows_result.all()]
-
+    try:
+        flows = (await session.exec(select(Flow).where(Flow.folder_id == project_id))).all()
         if not flows:
             raise HTTPException(status_code=404, detail="No flows found in project")
 
-        flows_without_api_keys = [remove_api_keys(flow.model_dump()) for flow in flows]
-        zip_stream = io.BytesIO()
+        # Create a zip file in memory
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+            # Add each flow to the zip file
+            for flow in flows:
+                flow_data = flow.model_dump()
+                flow_data = remove_api_keys(flow_data)
+                zip_file.writestr(f"{flow.name}.json", orjson.dumps(flow_data).decode())
 
-        with zipfile.ZipFile(zip_stream, "w") as zip_file:
-            for flow in flows_without_api_keys:
-                flow_json = json.dumps(jsonable_encoder(flow))
-                zip_file.writestr(f"{flow['name']}.json", flow_json)
+        # Reset buffer position
+        zip_buffer.seek(0)
 
-        zip_stream.seek(0)
-
-        current_time = datetime.now(tz=timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
-        filename = f"{current_time}_{project.name}_flows.zip"
-
+        # Create the response
         return StreamingResponse(
-            zip_stream,
-            media_type="application/x-zip-compressed",
-            headers={"Content-Disposition": f"attachment; filename={filename}"},
+            zip_buffer,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{project.name}.zip"'},
         )
-
     except Exception as e:
-        if "No result found" in str(e):
-            raise HTTPException(status_code=404, detail="Project not found") from e
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 

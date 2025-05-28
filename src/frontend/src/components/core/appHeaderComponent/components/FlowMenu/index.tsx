@@ -63,6 +63,7 @@ export const MenuBar = memo((): JSX.Element => {
     {
       get_all: true,
       header_flows: true,
+      folder_id: currentFlowFolderId,
     },
     { enabled: isFoldersFetched },
   );

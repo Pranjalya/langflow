@@ -35,6 +35,20 @@ async def add_user(
         session.add(new_user)
         await session.commit()
         await session.refresh(new_user)
+
+        # Set up SUPER_ADMIN role if user is a superuser
+        if new_user.is_superuser:
+            from langflow.services.database.models.resource_permission import ResourcePermission
+            admin_permission = ResourcePermission(
+                resource_id=new_user.id,
+                grantor_id=new_user.id,
+                grantee_id=new_user.id,
+                resource_type='user',
+                permission_level='SUPER_ADMIN'
+            )
+            session.add(admin_permission)
+            await session.commit()
+
         folder = await get_or_create_default_folder(session, new_user.id)
         if not folder:
             raise HTTPException(status_code=500, detail="Error creating default project")
@@ -53,7 +67,7 @@ async def read_current_user(
     return current_user
 
 
-@router.get("/", dependencies=[Depends(get_current_active_superuser)])
+@router.get("/")
 async def read_all_users(
     *,
     skip: int = 0,

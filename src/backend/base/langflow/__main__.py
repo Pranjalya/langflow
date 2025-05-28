@@ -23,6 +23,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from sqlmodel import select
+from sqlalchemy import text
 
 from langflow.initial_setup.setup import get_or_create_default_folder
 from langflow.logging.logger import configure, logger
@@ -655,6 +656,28 @@ def api_key_banner(unmasked_api_key) -> None:
     )
     console = Console()
     console.print(panel)
+
+
+@app.command()
+def purge(
+    log_level: str = typer.Option("error", help="Logging level.", envvar="LANGFLOW_LOG_LEVEL"),
+) -> None:
+    """Purge all data from the database."""
+    configure(log_level=log_level)
+    db_service = get_db_service()
+
+    async def _purge_database():
+        await initialize_services()
+        async with session_getter(db_service) as session:
+            # Delete all data from tables in reverse order of dependencies
+            await session.exec(text("DELETE FROM resource_permission"))
+            await session.exec(text("DELETE FROM flow"))
+            await session.exec(text("DELETE FROM folder"))
+            await session.exec(text("DELETE FROM user"))
+            await session.commit()
+            typer.echo("Database purged successfully.")
+
+    asyncio.run(_purge_database())
 
 
 def main() -> None:

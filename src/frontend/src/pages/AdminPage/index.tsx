@@ -42,9 +42,12 @@ import UserManagementModal from "../../modals/userManagementModal";
 import useAlertStore from "../../stores/alertStore";
 import { Users } from "../../types/api";
 import { UserInputType } from "../../types/components";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
+import ProjectRequestsPage from "./project-requests";
 
 export default function AdminPage() {
   const [inputValue, setInputValue] = useState("");
+  const [activeTab, setActiveTab] = useState("users");
 
   const [size, setPageSize] = useState(PAGINATION_SIZE);
   const [index, setPageIndex] = useState(PAGINATION_PAGE);
@@ -111,20 +114,19 @@ export default function AdminPage() {
     getUsers();
   }
 
-  function handleFilterUsers(input: string) {
-    setInputValue(input);
-
-    if (input === "") {
+  function handleFilterUsers(value: string) {
+    setInputValue(value);
+    if (value === "") {
       setFilterUserList(userList.current);
     } else {
-      const filteredList = userList.current.filter((user: Users) =>
-        user.username.toLowerCase().includes(input.toLowerCase()),
+      const filteredUsers = userList.current.filter((user) =>
+        user.username.toLowerCase().includes(value.toLowerCase()),
       );
-      setFilterUserList(filteredList);
+      setFilterUserList(filteredUsers);
     }
   }
 
-  function handleDeleteUser(user) {
+  function handleDeleteUser(user: Users) {
     mutateDeleteUser(
       { user_id: user.id },
       {
@@ -144,9 +146,9 @@ export default function AdminPage() {
     );
   }
 
-  function handleEditUser(userId, user) {
+  function handleEditUser(userId: string, user: UserInputType) {
     mutateUpdateUser(
-      { user_id: userId, user: user },
+      { user_id: userId, user },
       {
         onSuccess: () => {
           resetFilter();
@@ -259,243 +261,249 @@ export default function AdminPage() {
           <span className="admin-page-description-text">
             {ADMIN_HEADER_DESCRIPTION}
           </span>
-          <div className="flex w-full justify-between px-4">
-            <div className="flex w-96 items-center gap-4">
-              <Input
-                placeholder="Search Username"
-                value={inputValue}
-                onChange={(e) => handleFilterUsers(e.target.value)}
-              />
-              {inputValue.length > 0 ? (
-                <div
-                  className="cursor-pointer"
-                  onClick={() => {
-                    setInputValue("");
-                    setFilterUserList(userList.current);
-                  }}
-                >
-                  <IconComponent name="X" className="w-6 text-foreground" />
-                </div>
-              ) : (
-                <div>
-                  <IconComponent
-                    name="Search"
-                    className="w-6 text-foreground"
+
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="mb-4">
+              <TabsTrigger value="users">Users</TabsTrigger>
+              <TabsTrigger value="project-requests">Project Requests</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="users">
+              <div className="flex w-full justify-between px-4">
+                <div className="flex w-96 items-center gap-4">
+                  <Input
+                    placeholder="Search Username"
+                    value={inputValue}
+                    onChange={(e) => handleFilterUsers(e.target.value)}
                   />
+                  {inputValue.length > 0 ? (
+                    <div
+                      className="cursor-pointer"
+                      onClick={() => {
+                        setInputValue("");
+                        setFilterUserList(userList.current);
+                      }}
+                    >
+                      <IconComponent name="X" className="w-6 text-foreground" />
+                    </div>
+                  ) : (
+                    <div>
+                      <IconComponent
+                        name="Search"
+                        className="w-6 text-foreground"
+                      />
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-            <div>
-              <UserManagementModal
-                title="New User"
-                titleHeader={"Add a new user"}
-                cancelText="Cancel"
-                confirmationText="Save"
-                icon={"UserPlus2"}
-                onConfirm={(index, user) => {
-                  handleNewUser(user);
-                }}
-                asChild
-              >
-                <Button variant="primary">New User</Button>
-              </UserManagementModal>
-            </div>
-          </div>
-          {isPending || isIdle ? (
-            <div className="flex h-full w-full items-center justify-center">
-              <CustomLoader remSize={12} />
-            </div>
-          ) : userList.current.length === 0 && !isIdle ? (
-            <>
-              <div className="m-4 flex items-center justify-between text-sm">
-                No users registered.
+                <div>
+                  <UserManagementModal
+                    title="New User"
+                    titleHeader={"Add a new user"}
+                    cancelText="Cancel"
+                    confirmationText="Save"
+                    icon={"UserPlus2"}
+                    onConfirm={(index, user) => {
+                      handleNewUser(user);
+                    }}
+                    asChild
+                  >
+                    <Button variant="primary">New User</Button>
+                  </UserManagementModal>
+                </div>
               </div>
-            </>
-          ) : (
-            <>
-              <div
-                className={
-                  "m-4 h-fit overflow-x-hidden overflow-y-scroll rounded-md border-2 bg-background custom-scroll" +
-                  (isPending ? " border-0" : "")
-                }
-              >
-                <Table className={"table-fixed outline-1"}>
-                  <TableHeader
+              {isPending || isIdle ? (
+                <div className="flex h-full w-full items-center justify-center">
+                  <CustomLoader remSize={12} />
+                </div>
+              ) : userList.current.length === 0 && !isIdle ? (
+                <>
+                  <div className="m-4 flex items-center justify-between text-sm">
+                    No users registered.
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div
                     className={
-                      isPending ? "hidden" : "table-fixed bg-muted outline-1"
+                      "m-4 h-fit overflow-x-hidden overflow-y-scroll rounded-md border-2 bg-background custom-scroll" +
+                      (isPending ? " border-0" : "")
                     }
                   >
-                    <TableRow>
-                      <TableHead className="h-10">Id</TableHead>
-                      <TableHead className="h-10">Username</TableHead>
-                      <TableHead className="h-10">Active</TableHead>
-                      <TableHead className="h-10">Superuser</TableHead>
-                      <TableHead className="h-10">Created At</TableHead>
-                      <TableHead className="h-10">Updated At</TableHead>
-                      <TableHead className="h-10 w-[100px] text-right"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  {!isPending && (
-                    <TableBody>
-                      {filterUserList.map((user: UserInputType, index) => (
-                        <TableRow key={index}>
-                          <TableCell className="truncate py-2 font-medium">
-                            <ShadTooltip content={user.id}>
-                              <span className="cursor-default">{user.id}</span>
-                            </ShadTooltip>
-                          </TableCell>
-                          <TableCell className="truncate py-2">
-                            <ShadTooltip content={user.username}>
-                              <span className="cursor-default">
-                                {user.username}
-                              </span>
-                            </ShadTooltip>
-                          </TableCell>
-                          <TableCell className="relative left-1 truncate py-2 text-align-last-left">
-                            <ConfirmationModal
-                              size="x-small"
-                              title="Edit"
-                              titleHeader={`${user.username}`}
-                              modalContentTitle="Attention!"
-                              cancelText="Cancel"
-                              confirmationText="Confirm"
-                              icon={"UserCog2"}
-                              data={user}
-                              index={index}
-                              onConfirm={(index, user) => {
-                                handleDisableUser(
-                                  user.is_active,
-                                  user.id,
-                                  user,
-                                );
-                              }}
-                            >
-                              <ConfirmationModal.Content>
-                                <span>
-                                  Are you completely confident about the changes
-                                  you are making to this user?
-                                </span>
-                              </ConfirmationModal.Content>
-                              <ConfirmationModal.Trigger>
-                                <div className="flex w-fit">
-                                  <CheckBoxDiv checked={user.is_active} />
-                                </div>
-                              </ConfirmationModal.Trigger>
-                            </ConfirmationModal>
-                          </TableCell>
-                          <TableCell className="relative left-1 truncate py-2 text-align-last-left">
-                            <ConfirmationModal
-                              size="x-small"
-                              title="Edit"
-                              titleHeader={`${user.username}`}
-                              modalContentTitle="Attention!"
-                              cancelText="Cancel"
-                              confirmationText="Confirm"
-                              icon={"UserCog2"}
-                              data={user}
-                              index={index}
-                              onConfirm={(index, user) => {
-                                handleSuperUserEdit(
-                                  user.is_superuser,
-                                  user.id,
-                                  user,
-                                );
-                              }}
-                            >
-                              <ConfirmationModal.Content>
-                                <span>
-                                  Are you completely confident about the changes
-                                  you are making to this user?
-                                </span>
-                              </ConfirmationModal.Content>
-                              <ConfirmationModal.Trigger>
-                                <div className="flex w-fit">
-                                  <CheckBoxDiv checked={user.is_superuser} />
-                                </div>
-                              </ConfirmationModal.Trigger>
-                            </ConfirmationModal>
-                          </TableCell>
-                          <TableCell className="truncate py-2">
-                            {
-                              new Date(user.create_at!)
-                                .toISOString()
-                                .split("T")[0]
-                            }
-                          </TableCell>
-                          <TableCell className="truncate py-2">
-                            {
-                              new Date(user.updated_at!)
-                                .toISOString()
-                                .split("T")[0]
-                            }
-                          </TableCell>
-                          <TableCell className="flex w-[100px] py-2 text-right">
-                            <div className="flex">
-                              <UserManagementModal
-                                title="Edit"
-                                titleHeader={`${user.id}`}
-                                cancelText="Cancel"
-                                confirmationText="Save"
-                                icon={"UserPlus2"}
-                                data={user}
-                                index={index}
-                                onConfirm={(index, editUser) => {
-                                  handleEditUser(user.id, editUser);
-                                }}
-                              >
-                                <ShadTooltip content="Edit" side="top">
-                                  <IconComponent
-                                    name="Pencil"
-                                    className="h-4 w-4 cursor-pointer"
-                                  />
-                                </ShadTooltip>
-                              </UserManagementModal>
-
+                    <Table className={"table-fixed outline-1"}>
+                      <TableHeader
+                        className={
+                          isPending ? "hidden" : "table-fixed bg-muted outline-1"
+                        }
+                      >
+                        <TableRow>
+                          <TableHead className="h-10">Id</TableHead>
+                          <TableHead className="h-10">Username</TableHead>
+                          <TableHead className="h-10">Active</TableHead>
+                          <TableHead className="h-10">Superuser</TableHead>
+                          <TableHead className="h-10">Created At</TableHead>
+                          <TableHead className="h-10">Updated At</TableHead>
+                          <TableHead className="h-10 w-[100px] text-right"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filterUserList.map((user: UserInputType, index) => (
+                          <TableRow key={index}>
+                            <TableCell className="truncate py-2">
+                              {user.id}
+                            </TableCell>
+                            <TableCell className="truncate py-2">
+                              {user.username}
+                            </TableCell>
+                            <TableCell className="relative left-1 truncate py-2 text-align-last-left">
                               <ConfirmationModal
                                 size="x-small"
-                                title="Delete"
-                                titleHeader="Delete User"
+                                title="Edit"
+                                titleHeader={`${user.username}`}
                                 modalContentTitle="Attention!"
                                 cancelText="Cancel"
-                                confirmationText="Delete"
-                                icon={"UserMinus2"}
+                                confirmationText="Confirm"
+                                icon={"UserCog2"}
                                 data={user}
                                 index={index}
                                 onConfirm={(index, user) => {
-                                  handleDeleteUser(user);
+                                  handleDisableUser(
+                                    user.is_active,
+                                    user.id,
+                                    user,
+                                  );
                                 }}
                               >
                                 <ConfirmationModal.Content>
                                   <span>
-                                    Are you sure you want to delete this user?
-                                    This action cannot be undone.
+                                    Are you completely confident about the changes
+                                    you are making to this user?
                                   </span>
                                 </ConfirmationModal.Content>
                                 <ConfirmationModal.Trigger>
-                                  <IconComponent
-                                    name="Trash2"
-                                    className="ml-2 h-4 w-4 cursor-pointer"
-                                  />
+                                  <div className="flex w-fit">
+                                    <CheckBoxDiv checked={user.is_active} />
+                                  </div>
                                 </ConfirmationModal.Trigger>
                               </ConfirmationModal>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  )}
-                </Table>
-              </div>
+                            </TableCell>
+                            <TableCell className="relative left-1 truncate py-2 text-align-last-left">
+                              <ConfirmationModal
+                                size="x-small"
+                                title="Edit"
+                                titleHeader={`${user.username}`}
+                                modalContentTitle="Attention!"
+                                cancelText="Cancel"
+                                confirmationText="Confirm"
+                                icon={"UserCog2"}
+                                data={user}
+                                index={index}
+                                onConfirm={(index, user) => {
+                                  handleSuperUserEdit(
+                                    user.is_superuser,
+                                    user.id,
+                                    user,
+                                  );
+                                }}
+                              >
+                                <ConfirmationModal.Content>
+                                  <span>
+                                    Are you completely confident about the changes
+                                    you are making to this user?
+                                  </span>
+                                </ConfirmationModal.Content>
+                                <ConfirmationModal.Trigger>
+                                  <div className="flex w-fit">
+                                    <CheckBoxDiv checked={user.is_superuser} />
+                                  </div>
+                                </ConfirmationModal.Trigger>
+                              </ConfirmationModal>
+                            </TableCell>
+                            <TableCell className="truncate py-2">
+                              {
+                                new Date(user.create_at!)
+                                  .toISOString()
+                                  .split("T")[0]
+                              }
+                            </TableCell>
+                            <TableCell className="truncate py-2">
+                              {
+                                new Date(user.updated_at!)
+                                  .toISOString()
+                                  .split("T")[0]
+                              }
+                            </TableCell>
+                            <TableCell className="flex w-[100px] py-2 text-right">
+                              <div className="flex">
+                                <UserManagementModal
+                                  title="Edit"
+                                  titleHeader={`${user.id}`}
+                                  cancelText="Cancel"
+                                  confirmationText="Save"
+                                  icon={"UserPlus2"}
+                                  data={user}
+                                  index={index}
+                                  onConfirm={(index, editUser) => {
+                                    handleEditUser(user.id, editUser);
+                                  }}
+                                >
+                                  <ShadTooltip content="Edit" side="top">
+                                    <IconComponent
+                                      name="Pencil"
+                                      className="h-4 w-4 cursor-pointer"
+                                    />
+                                  </ShadTooltip>
+                                </UserManagementModal>
 
-              <PaginatorComponent
-                pageIndex={index}
-                pageSize={size}
-                totalRowsCount={totalRowsCount}
-                paginate={handleChangePagination}
-                rowsCount={PAGINATION_ROWS_COUNT}
-              ></PaginatorComponent>
-            </>
-          )}
+                                <ConfirmationModal
+                                  size="x-small"
+                                  title="Delete"
+                                  titleHeader="Delete User"
+                                  modalContentTitle="Attention!"
+                                  cancelText="Cancel"
+                                  confirmationText="Delete"
+                                  icon={"UserMinus2"}
+                                  data={user}
+                                  index={index}
+                                  onConfirm={(index, user) => {
+                                    handleDeleteUser(user);
+                                  }}
+                                >
+                                  <ConfirmationModal.Content>
+                                    <span>
+                                      Are you sure you want to delete this user?
+                                      This action cannot be undone.
+                                    </span>
+                                  </ConfirmationModal.Content>
+                                  <ConfirmationModal.Trigger>
+                                    <IconComponent
+                                      name="Trash2"
+                                      className="ml-2 h-4 w-4 cursor-pointer"
+                                    />
+                                  </ConfirmationModal.Trigger>
+                                </ConfirmationModal>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  <PaginatorComponent
+                    pageIndex={index}
+                    pageSize={size}
+                    totalRowsCount={totalRowsCount}
+                    paginate={handleChangePagination}
+                    rowsCount={PAGINATION_ROWS_COUNT}
+                  ></PaginatorComponent>
+                </>
+              )}
+            </TabsContent>
+
+            <TabsContent value="project-requests">
+              <ProjectRequestsPage />
+            </TabsContent>
+          </Tabs>
         </div>
       )}
     </>

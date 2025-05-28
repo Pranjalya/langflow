@@ -298,6 +298,18 @@ async def create_super_user(
         await db.commit()
         await db.refresh(super_user)
 
+        # Set up SUPER_ADMIN role
+        from langflow.services.database.models.resource_permission import ResourcePermission
+        admin_permission = ResourcePermission(
+            resource_id=super_user.id,
+            grantor_id=super_user.id,
+            grantee_id=super_user.id,
+            resource_type='user',
+            permission_level='SUPER_ADMIN'
+        )
+        db.add(admin_permission)
+        await db.commit()
+
     return super_user
 
 

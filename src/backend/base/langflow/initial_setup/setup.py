@@ -36,6 +36,7 @@ from langflow.services.database.models.user.crud import get_user_by_username
 from langflow.services.deps import get_settings_service, get_storage_service, get_variable_service, session_scope
 from langflow.template.field.prompt import DEFAULT_PROMPT_INTUT_TYPES
 from langflow.utils.util import escape_json_dump
+from langflow.services.database.models.resource_permission import ResourcePermission
 
 # In the folder ./starter_projects we have a few JSON files that represent
 # starter projects. We want to load these into the database so that users
@@ -1010,3 +1011,33 @@ async def sync_flows_from_fs():
         except Exception:  # noqa: BLE001
             logger.exception("Error while syncing flows from database")
         await asyncio.sleep(fs_flows_polling_interval)
+
+
+async def setup_admin_permissions(session: AsyncSession, admin_user_id: UUID) -> None:
+    """Set up admin user with SUPER_ADMIN role."""
+    try:
+        # Check if admin already has SUPER_ADMIN role
+        existing_permission = (
+            await session.exec(
+                select(ResourcePermission).where(
+                    ResourcePermission.grantee_id == admin_user_id,
+                    ResourcePermission.resource_type == 'user',
+                    ResourcePermission.permission_level == 'SUPER_ADMIN'
+                )
+            )
+        ).first()
+
+        if not existing_permission:
+            # Create SUPER_ADMIN permission for admin user
+            admin_permission = ResourcePermission(
+                resource_id=admin_user_id,
+                grantor_id=admin_user_id,
+                grantee_id=admin_user_id,
+                resource_type='user',
+                permission_level='SUPER_ADMIN'
+            )
+            session.add(admin_permission)
+            await session.commit()
+    except Exception as e:
+        logger.error(f"Error setting up admin permissions: {e}")
+        raise

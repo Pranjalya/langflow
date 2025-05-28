@@ -7,7 +7,8 @@ from sqlalchemy import JSON, Column
 from sqlmodel import Field, Relationship, SQLModel
 
 from langflow.schema.serialize import UUIDstr
-from langflow.services.database.models.folder.user_link import folder_user_link
+from langflow.services.database.models.resource_permission import ResourcePermission
+# from langflow.services.database.models.folder.user_link import folder_user_link
 
 if TYPE_CHECKING:
     from langflow.services.database.models.api_key import ApiKey
@@ -49,8 +50,17 @@ class User(SQLModel, table=True):  # type: ignore[call-arg]
     )
     shared_folders: list["Folder"] = Relationship(
         back_populates="users",
-        link_model=folder_user_link,
+        link_model=ResourcePermission,
+        sa_relationship_kwargs={
+            "primaryjoin": "User.id == ResourcePermission.grantee_id",
+            "secondaryjoin": "Folder.id == ResourcePermission.resource_id",
+            "viewonly": True,
+        },
     )
+    # shared_folders: list["Folder"] = Relationship(
+    #     back_populates="users",
+    #     link_model=folder_user_link,
+    # )
     optins: dict[str, Any] | None = Field(
         sa_column=Column(JSON, default=lambda: UserOptin().model_dump(), nullable=True)
     )

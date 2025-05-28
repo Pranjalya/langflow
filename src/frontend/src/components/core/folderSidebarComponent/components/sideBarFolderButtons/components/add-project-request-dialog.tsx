@@ -4,25 +4,22 @@ import MultiselectComponent from "@/components/core/parameterRenderComponent/com
 import { useEffect, useState } from "react";
 import { useGetUsers } from "@/controllers/API/queries/auth/use-get-users-page";
 import useAuthStore from "@/stores/authStore";
-import { useCreateProjectRequest } from "@/controllers/API/queries/projects";
 
-interface AddProjectDialogProps {
+interface AddProjectRequestDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (data: { name: string; description: string; users: string[] }) => void;
+  onSubmit: (data: { project_name: string; justification: string; requested_users: string[] }) => void;
   isLoading: boolean;
 }
 
-export const AddProjectDialog = ({ open, onOpenChange, onSubmit, isLoading }: AddProjectDialogProps) => {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
+export const AddProjectRequestDialog = ({ open, onOpenChange, onSubmit, isLoading }: AddProjectRequestDialogProps) => {
+  const [projectName, setProjectName] = useState("");
   const [justification, setJustification] = useState("");
   const [users, setUsers] = useState<string[]>([]);
   const [touched, setTouched] = useState(false);
 
   // Get current user
   const userData = useAuthStore((state) => state.userData);
-  const isAdmin = useAuthStore((state) => state.isAdmin);
   const currentUserId = userData?.id;
   const currentUsername = userData?.username;
 
@@ -31,9 +28,6 @@ export const AddProjectDialog = ({ open, onOpenChange, onSubmit, isLoading }: Ad
   const [userOptions, setUserOptions] = useState<{ id: string; username: string }[]>([]);
   const [usernameToId, setUsernameToId] = useState<Record<string, string>>({});
   const [idToUsername, setIdToUsername] = useState<Record<string, string>>({});
-
-  // Project request mutation
-  const { mutate: createProjectRequest, isPending: isCreatingRequest } = useCreateProjectRequest();
 
   useEffect(() => {
     if (open) {
@@ -60,8 +54,7 @@ export const AddProjectDialog = ({ open, onOpenChange, onSubmit, isLoading }: Ad
       });
     }
     if (!open) {
-      setName("");
-      setDescription("");
+      setProjectName("");
       setJustification("");
       setUsers(currentUserId ? [currentUserId] : []);
       setTouched(false);
@@ -93,19 +86,8 @@ export const AddProjectDialog = ({ open, onOpenChange, onSubmit, isLoading }: Ad
   const handleSubmit = (e) => {
     e.preventDefault();
     setTouched(true);
-    if (!name.trim()) return;
-
-    if (isAdmin) {
-      // Admin creates project directly
-      onSubmit({ name: name.trim(), description: description.trim(), users });
-    } else {
-      // Non-admin creates project request
-      createProjectRequest({
-        project_name: name.trim(),
-        justification: justification.trim(),
-        requested_users: users
-      });
-    }
+    if (!projectName.trim() || !justification.trim()) return;
+    onSubmit({ project_name: projectName.trim(), justification: justification.trim(), requested_users: users });
     onOpenChange(false);
   };
 
@@ -113,7 +95,7 @@ export const AddProjectDialog = ({ open, onOpenChange, onSubmit, isLoading }: Ad
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{isAdmin ? "Create New Project" : "Request New Project"}</DialogTitle>
+          <DialogTitle>Request New Project</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1">
@@ -121,41 +103,28 @@ export const AddProjectDialog = ({ open, onOpenChange, onSubmit, isLoading }: Ad
             <input
               id="project-name"
               className="border rounded px-3 py-2 text-sm"
-              value={name}
-              onChange={e => setName(e.target.value)}
+              value={projectName}
+              onChange={e => setProjectName(e.target.value)}
               required
               autoFocus
               placeholder="Enter project name"
             />
-            {touched && !name.trim() && <span className="text-xs text-red-500">Project name is required.</span>}
+            {touched && !projectName.trim() && <span className="text-xs text-red-500">Project name is required.</span>}
           </div>
-          {isAdmin ? (
-            <div className="flex flex-col gap-1">
-              <label htmlFor="project-description" className="font-medium text-sm">Description</label>
-              <textarea
-                id="project-description"
-                className="border rounded px-3 py-2 text-sm min-h-[60px]"
-                value={description}
-                onChange={e => setDescription(e.target.value)}
-                placeholder="Enter project description (optional)"
-              />
-            </div>
-          ) : (
-            <div className="flex flex-col gap-1">
-              <label htmlFor="project-justification" className="font-medium text-sm">Justification<span className="text-red-500">*</span></label>
-              <textarea
-                id="project-justification"
-                className="border rounded px-3 py-2 text-sm min-h-[60px]"
-                value={justification}
-                onChange={e => setJustification(e.target.value)}
-                required
-                placeholder="Explain why you need this project"
-              />
-              {touched && !justification.trim() && <span className="text-xs text-red-500">Justification is required.</span>}
-            </div>
-          )}
           <div className="flex flex-col gap-1">
-            <label className="font-medium text-sm">Users with access</label>
+            <label htmlFor="project-justification" className="font-medium text-sm">Justification<span className="text-red-500">*</span></label>
+            <textarea
+              id="project-justification"
+              className="border rounded px-3 py-2 text-sm min-h-[60px]"
+              value={justification}
+              onChange={e => setJustification(e.target.value)}
+              required
+              placeholder="Explain why you need this project"
+            />
+            {touched && !justification.trim() && <span className="text-xs text-red-500">Justification is required.</span>}
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="font-medium text-sm">Users to include</label>
             <MultiselectComponent
               disabled={usersStatus === "pending"}
               value={selectedUsernames}
@@ -164,16 +133,16 @@ export const AddProjectDialog = ({ open, onOpenChange, onSubmit, isLoading }: Ad
               id="users-with-access"
               editNode={false}
             />
-            <span className="text-xs text-muted-foreground">Search and select users to grant access. You (the creator) are always included.</span>
+            <span className="text-xs text-muted-foreground">Search and select users to include in the project. You (the requester) are always included.</span>
           </div>
           <DialogFooter>
             <Button
               type="submit"
-              disabled={isLoading || isCreatingRequest || !name.trim() || (!isAdmin && !justification.trim())}
-              loading={isLoading || isCreatingRequest}
+              disabled={isLoading || !projectName.trim() || !justification.trim()}
+              loading={isLoading}
               className="w-full"
             >
-              {isAdmin ? "Create Project" : "Submit Request"}
+              Submit Request
             </Button>
           </DialogFooter>
         </form>

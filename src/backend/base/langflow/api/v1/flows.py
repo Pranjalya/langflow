@@ -16,6 +16,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import StreamingResponse
 from fastapi_pagination import Page, Params
 from fastapi_pagination.ext.sqlmodel import apaginate
+from sqlmodel import and_, col, select, or_
 from sqlmodel import and_, col, select
 from sqlalchemy.orm import selectinload
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -33,6 +34,7 @@ from langflow.services.database.models.folder.model import Folder
 from langflow.services.deps import get_settings_service
 from langflow.services.settings.service import SettingsService
 from langflow.utils.compression import compress_response
+from langflow.services.database.models.resource_permission import ResourcePermission
 
 # build router
 router = APIRouter(prefix="/flows", tags=["Flows"])
@@ -149,6 +151,28 @@ async def create_flow(
         await session.commit()
         await session.refresh(db_flow)
 
+        # If the flow is in a folder, check if the folder is shared
+        if db_flow.folder_id:
+            # Get all users who have access to the folder
+            folder_permissions = await session.exec(
+                select(ResourcePermission).where(
+                    ResourcePermission.resource_id == db_flow.folder_id,
+                    ResourcePermission.resource_type == 'project'
+                )
+            )
+            
+            # Create flow permissions for each user who has access to the folder
+            for folder_permission in folder_permissions:
+                flow_permission = ResourcePermission(
+                    resource_id=db_flow.id,
+                    grantor_id=current_user.id,
+                    grantee_id=folder_permission.grantee_id,
+                    permission_level=folder_permission.permission_level,
+                    resource_type='FLOW'
+                )
+                session.add(flow_permission)
+            await session.commit()
+
         await _save_flow_to_fs(db_flow)
 
     except Exception as e:
@@ -181,34 +205,19 @@ async def read_flows(
     params: Annotated[Params, Depends()],
     header_flows: bool = False,
 ):
-    """Retrieve a list of flows with pagination support.
-
-    Args:
-        current_user (User): The current authenticated user.
-        session (Session): The database session.
-        settings_service (SettingsService): The settings service.
-        components_only (bool, optional): Whether to return only components. Defaults to False.
-
-        get_all (bool, optional): Whether to return all flows without pagination. Defaults to True.
-        **This field must be True because of backward compatibility with the frontend - Release: 1.0.20**
-
-        folder_id (UUID, optional): The project ID. Defaults to None.
-        params (Params): Pagination parameters.
-        remove_example_flows (bool, optional): Whether to remove example flows. Defaults to False.
-        header_flows (bool, optional): Whether to return only specific headers of the flows. Defaults to False.
-
-    Returns:
-        list[FlowRead] | Page[FlowRead] | list[FlowHeader]
-        A list of flows or a paginated response containing the list of flows or a list of flow headers.
-    """
+    """Retrieve a list of flows with pagination support."""
     try:
         auth_settings = get_settings_service().auth_settings
+        logger.info(f"Reading flows for user {current_user.id}")
+        logger.info(f"Parameters: components_only={components_only}, get_all={get_all}, folder_id={folder_id}")
 
         default_folder = (await session.exec(select(Folder).where(Folder.name == DEFAULT_FOLDER_NAME))).first()
         default_folder_id = default_folder.id if default_folder else None
+        logger.info(f"Default folder ID: {default_folder_id}")
 
         starter_folder = (await session.exec(select(Folder).where(Folder.name == STARTER_FOLDER_NAME))).first()
         starter_folder_id = starter_folder.id if starter_folder else None
+        logger.info(f"Starter folder ID: {starter_folder_id}")
 
         if not starter_folder and not default_folder:
             raise HTTPException(
@@ -218,27 +227,65 @@ async def read_flows(
 
         if not folder_id:
             folder_id = default_folder_id
+        logger.info(f"Using folder ID: {folder_id}")
 
-        if auth_settings.AUTO_LOGIN:
-            stmt = select(Flow).where(
-                (Flow.user_id == None) | (Flow.user_id == current_user.id)  # noqa: E711
+        # First check owned flows
+        owned_flows = await session.exec(
+            select(Flow).where(Flow.user_id == current_user.id)
+        )
+        owned_flows = owned_flows.all()
+        logger.info(f"Found {len(owned_flows)} owned flows")
+
+        # Then check shared flows
+        shared_flow_ids = await session.exec(
+            select(ResourcePermission.resource_id)
+            .where(
+                ResourcePermission.grantee_id == current_user.id,
+                ResourcePermission.resource_type == 'FLOW'
             )
-        else:
-            stmt = select(Flow).where(Flow.user_id == current_user.id)
+        )
+        shared_flow_ids = shared_flow_ids.all()
+        logger.info(f"Found {len(shared_flow_ids)} shared flow IDs: {shared_flow_ids}")
+
+        # Create the main query
+        stmt = select(Flow).where(
+            or_(
+                Flow.user_id == current_user.id,
+                Flow.id.in_(shared_flow_ids) if shared_flow_ids else False
+            )
+        )
 
         if remove_example_flows:
             stmt = stmt.where(Flow.folder_id != starter_folder_id)
 
         if components_only:
             stmt = stmt.where(Flow.is_component == True)  # noqa: E712
+            logger.info("Applied components_only filter")
+
+        # Only apply folder filter if it's not None
+        logger.info(f"folder {folder_id}, {folder_id is None}")
+        if folder_id is not None:
+            stmt = stmt.where(Flow.folder_id == folder_id)
+            logger.info(f"Applied folder filter for folder_id: {folder_id}")
+
+        # Log the SQL query
+        logger.info(f"SQL Query: {stmt}")
+
+        # Execute the query
+        flows = await session.exec(stmt)
+        flows = flows.all()
+        logger.info(f"Final query returned {len(flows)} flows")
 
         if get_all:
             flows = (await session.exec(stmt)).all()
             flows = validate_is_component(flows)
+            # Only filter by components if components_only is True
             if components_only:
                 flows = [flow for flow in flows if flow.is_component]
+                logger.info(f"Post-processing: filtered to {len(flows)} component flows")
             if remove_example_flows and starter_folder_id:
                 flows = [flow for flow in flows if flow.folder_id != starter_folder_id]
+                logger.info(f"Post-processing: removed example flows, remaining: {len(flows)}")
             if header_flows:
                 # Convert to FlowHeader objects and compress the response
                 flow_headers = [FlowHeader.model_validate(flow, from_attributes=True) for flow in flows]
@@ -246,8 +293,6 @@ async def read_flows(
 
             # Compress the full flows response
             return compress_response(flows)
-
-        stmt = stmt.where(Flow.folder_id == folder_id)
 
         import warnings
 
@@ -258,6 +303,7 @@ async def read_flows(
             return await apaginate(session, stmt, params=params)
 
     except Exception as e:
+        logger.exception("Error in read_flows")
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
@@ -276,7 +322,23 @@ async def _read_flow(
         stmt = stmt.where(
             (Flow.user_id == user_id) | (Flow.user_id == None)  # noqa: E711
         )
-    return (await session.exec(stmt)).first()
+    
+    # Check for resource permissions
+    flow = (await session.exec(stmt)).first()
+    if not flow:
+        # If flow not found in base query, check if user has permission through resource permissions
+        permission = await session.exec(
+            select(ResourcePermission).where(
+                ResourcePermission.resource_id == flow_id,
+                ResourcePermission.grantee_id == user_id,
+                ResourcePermission.resource_type == 'FLOW'
+            )
+        ).first()
+        if permission:
+            # If user has permission, get the flow
+            flow = (await session.exec(select(Flow).where(Flow.id == flow_id))).first()
+    
+    return flow
 
 
 @router.get("/{flow_id}", response_model=FlowRead, status_code=200)
@@ -424,8 +486,33 @@ async def create_flows(
         session.add(db_flow)
         db_flows.append(db_flow)
     await session.commit()
+    
+    # After committing, we can access the flow IDs
     for db_flow in db_flows:
         await session.refresh(db_flow)
+        
+        # If the flow is in a folder, check if the folder is shared
+        if db_flow.folder_id:
+            # Get all users who have access to the folder
+            folder_permissions = await session.exec(
+                select(ResourcePermission).where(
+                    ResourcePermission.resource_id == db_flow.folder_id,
+                    ResourcePermission.resource_type == 'project'
+                )
+            )
+            
+            # Create flow permissions for each user who has access to the folder
+            for folder_permission in folder_permissions:
+                flow_permission = ResourcePermission(
+                    resource_id=db_flow.id,
+                    grantor_id=current_user.id,
+                    grantee_id=folder_permission.grantee_id,
+                    permission_level=folder_permission.permission_level,
+                    resource_type='FLOW'
+                )
+                session.add(flow_permission)
+    
+    await session.commit()
     return db_flows
 
 
