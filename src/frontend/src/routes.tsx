@@ -101,7 +101,7 @@ const router = createBrowserRouter(
                     element={<HomePage key="flows" type="flows" />}
                   >
                     <Route
-                      path="folder/:folderId"
+                      path="folder/:folderId/"
                       element={<HomePage key="flows" type="flows" />}
                     />
                   </Route>

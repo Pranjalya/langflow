@@ -205,19 +205,34 @@ async def read_flows(
     params: Annotated[Params, Depends()],
     header_flows: bool = False,
 ):
-    """Retrieve a list of flows with pagination support."""
+    """Retrieve a list of flows with pagination support.
+
+    Args:
+        current_user (User): The current authenticated user.
+        session (Session): The database session.
+        settings_service (SettingsService): The settings service.
+        components_only (bool, optional): Whether to return only components. Defaults to False.
+
+        get_all (bool, optional): Whether to return all flows without pagination. Defaults to True.
+        **This field must be True because of backward compatibility with the frontend - Release: 1.0.20**
+
+        folder_id (UUID, optional): The project ID. Defaults to None.
+        params (Params): Pagination parameters.
+        remove_example_flows (bool, optional): Whether to remove example flows. Defaults to False.
+        header_flows (bool, optional): Whether to return only specific headers of the flows. Defaults to False.
+
+    Returns:
+        list[FlowRead] | Page[FlowRead] | list[FlowHeader]
+        A list of flows or a paginated response containing the list of flows or a list of flow headers.
+    """
     try:
         auth_settings = get_settings_service().auth_settings
-        logger.info(f"Reading flows for user {current_user.id}")
-        logger.info(f"Parameters: components_only={components_only}, get_all={get_all}, folder_id={folder_id}")
 
         default_folder = (await session.exec(select(Folder).where(Folder.name == DEFAULT_FOLDER_NAME))).first()
         default_folder_id = default_folder.id if default_folder else None
-        logger.info(f"Default folder ID: {default_folder_id}")
 
         starter_folder = (await session.exec(select(Folder).where(Folder.name == STARTER_FOLDER_NAME))).first()
         starter_folder_id = starter_folder.id if starter_folder else None
-        logger.info(f"Starter folder ID: {starter_folder_id}")
 
         if not starter_folder and not default_folder:
             raise HTTPException(
@@ -227,65 +242,27 @@ async def read_flows(
 
         if not folder_id:
             folder_id = default_folder_id
-        logger.info(f"Using folder ID: {folder_id}")
 
-        # First check owned flows
-        owned_flows = await session.exec(
-            select(Flow).where(Flow.user_id == current_user.id)
-        )
-        owned_flows = owned_flows.all()
-        logger.info(f"Found {len(owned_flows)} owned flows")
-
-        # Then check shared flows
-        shared_flow_ids = await session.exec(
-            select(ResourcePermission.resource_id)
-            .where(
-                ResourcePermission.grantee_id == current_user.id,
-                ResourcePermission.resource_type == 'FLOW'
+        if auth_settings.AUTO_LOGIN:
+            stmt = select(Flow).where(
+                (Flow.user_id == None) | (Flow.user_id == current_user.id)  # noqa: E711
             )
-        )
-        shared_flow_ids = shared_flow_ids.all()
-        logger.info(f"Found {len(shared_flow_ids)} shared flow IDs: {shared_flow_ids}")
-
-        # Create the main query
-        stmt = select(Flow).where(
-            or_(
-                Flow.user_id == current_user.id,
-                Flow.id.in_(shared_flow_ids) if shared_flow_ids else False
-            )
-        )
+        else:
+            stmt = select(Flow).where(Flow.user_id == current_user.id)
 
         if remove_example_flows:
             stmt = stmt.where(Flow.folder_id != starter_folder_id)
 
         if components_only:
             stmt = stmt.where(Flow.is_component == True)  # noqa: E712
-            logger.info("Applied components_only filter")
-
-        # Only apply folder filter if it's not None
-        logger.info(f"folder {folder_id}, {folder_id is None}")
-        if folder_id is not None:
-            stmt = stmt.where(Flow.folder_id == folder_id)
-            logger.info(f"Applied folder filter for folder_id: {folder_id}")
-
-        # Log the SQL query
-        logger.info(f"SQL Query: {stmt}")
-
-        # Execute the query
-        flows = await session.exec(stmt)
-        flows = flows.all()
-        logger.info(f"Final query returned {len(flows)} flows")
 
         if get_all:
             flows = (await session.exec(stmt)).all()
             flows = validate_is_component(flows)
-            # Only filter by components if components_only is True
             if components_only:
                 flows = [flow for flow in flows if flow.is_component]
-                logger.info(f"Post-processing: filtered to {len(flows)} component flows")
             if remove_example_flows and starter_folder_id:
                 flows = [flow for flow in flows if flow.folder_id != starter_folder_id]
-                logger.info(f"Post-processing: removed example flows, remaining: {len(flows)}")
             if header_flows:
                 # Convert to FlowHeader objects and compress the response
                 flow_headers = [FlowHeader.model_validate(flow, from_attributes=True) for flow in flows]
@@ -293,6 +270,8 @@ async def read_flows(
 
             # Compress the full flows response
             return compress_response(flows)
+
+        stmt = stmt.where(Flow.folder_id == folder_id)
 
         import warnings
 
@@ -303,9 +282,7 @@ async def read_flows(
             return await apaginate(session, stmt, params=params)
 
     except Exception as e:
-        logger.exception("Error in read_flows")
         raise HTTPException(status_code=500, detail=str(e)) from e
-
 
 async def _read_flow(
     session: AsyncSession,

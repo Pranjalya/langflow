@@ -18,6 +18,7 @@ from sqlmodel import select
 from langflow.api.utils import CurrentActiveUser, DbSession, cascade_delete_flow, custom_params, remove_api_keys
 from langflow.api.v1.flows import create_flows
 from langflow.api.v1.schemas import FlowListCreate
+from langflow.logging import logger
 from langflow.helpers.flow import generate_unique_flow_name
 from langflow.helpers.folders import generate_unique_folder_name
 from langflow.initial_setup.constants import STARTER_FOLDER_NAME
@@ -157,6 +158,8 @@ async def read_project(
     search: str = "",
 ):
     try:
+        logger.info(f"Project ID: {project_id}")
+        logger.info(f"params: {params}")
         project = (
             await session.exec(
                 select(Folder)
@@ -181,6 +184,8 @@ async def read_project(
 
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+
+    logger.info(f"project found {project}")
 
     try:
         if params and params.page and params.size:
