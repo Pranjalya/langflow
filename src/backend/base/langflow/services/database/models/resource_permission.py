@@ -11,6 +11,7 @@ class PermissionLevel(str, Enum):
 class ResourceType(str, Enum):
     FLOW = "flow"
     PROJECT = "project"
+    USER = "user"
 
 class ResourcePermissionBase(SQLModel):
     resource_id: UUID = Field(index=True)
@@ -18,6 +19,9 @@ class ResourcePermissionBase(SQLModel):
     grantee_id: UUID = Field(foreign_key="user.id")
     permission_level: PermissionLevel = Field(sa_column_kwargs={"nullable": False})
     resource_type: ResourceType = Field(sa_column_kwargs={"nullable": False})
+    can_read: bool = Field(default=False)
+    can_run: bool = Field(default=False)
+    can_edit: bool = Field(default=False)
 
 class ResourcePermission(ResourcePermissionBase, table=True):
     __tablename__ = "resource_permission"

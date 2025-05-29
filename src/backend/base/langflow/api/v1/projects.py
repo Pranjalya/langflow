@@ -52,19 +52,24 @@ async def create_project(
         new_project.user_id = current_user.id
         # Add shared users if provided
         if project.users:
-            users = (await session.exec(select(User).where(User.id.in_(project.users)))).all()
+            users = (await session.exec(select(User).where(User.id.in_([u.id for u in project.users])))).all()
             new_project.users = users  # Assign model instances, not UUIDs
             
             # Create ResourcePermission entries for each user
-            for user in users:
-                permission = ResourcePermission(
-                    resource_id=new_project.id,
-                    grantor_id=current_user.id,
-                    grantee_id=user.id,
-                    permission_level='USER',
-                    resource_type='project'
-                )
-                session.add(permission)
+            for user_permission in project.users:
+                user = next((u for u in users if u.id == user_permission.id), None)
+                if user:
+                    permission = ResourcePermission(
+                        resource_id=new_project.id,
+                        grantor_id=current_user.id,
+                        grantee_id=user.id,
+                        permission_level='USER',  # Default to USER, will be overridden by specific permissions
+                        resource_type='project',
+                        can_read=user_permission.can_read,
+                        can_run=user_permission.can_run,
+                        can_edit=user_permission.can_edit
+                    )
+                    session.add(permission)
         
         # First check if the project.name is unique
         # there might be flows with name like: "MyFlow", "MyFlow (1)", "MyFlow (2)"
@@ -89,29 +94,26 @@ async def create_project(
                     new_project.name = f"{new_project.name} ({max(project_numbers) + 1})"
                 else:
                     new_project.name = f"{new_project.name} (1)"
-
+        
         session.add(new_project)
         await session.commit()
         await session.refresh(new_project)
-
-        if project.components_list:
-            update_statement_components = (
-                update(Flow).where(Flow.id.in_(project.components_list)).values(folder_id=new_project.id)  # type: ignore[attr-defined]
-            )
-            await session.exec(update_statement_components)
-            await session.commit()
-
-        if project.flows_list:
-            update_statement_flows = (
-                update(Flow).where(Flow.id.in_(project.flows_list)).values(folder_id=new_project.id)  # type: ignore[attr-defined]
-            )
-            await session.exec(update_statement_flows)
-            await session.commit()
-
+        return new_project
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        if "UNIQUE constraint failed" in str(e):
+            # Get the name of the column that failed
+            columns = str(e).split("UNIQUE constraint failed: ")[1].split(".")[1].split("\n")[0]
+            # UNIQUE constraint failed: flow.user_id, flow.name
+            # or UNIQUE constraint failed: flow.name
+            # if the column has id in it, we want the other column
+            column = columns.split(",")[1] if "id" in columns.split(",")[0] else columns.split(",")[0]
 
-    return new_project
+            raise HTTPException(
+                status_code=400, detail=f"{column.capitalize().replace('_', ' ')} must be unique"
+            ) from e
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/", response_model=list[FolderRead], status_code=200)

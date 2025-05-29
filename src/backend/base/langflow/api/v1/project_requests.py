@@ -74,26 +74,21 @@ async def update_project_request(
 ):
     """Update a project request. Only admin users can update requests."""
     try:
-        # Check if user is admin
-        if not current_user.is_superuser:
-            raise HTTPException(
-                status_code=403,
-                detail="Only admin users can update project requests",
-            )
+        project_request = await session.exec(
+            select(ProjectRequest).where(ProjectRequest.id == request_id)
+        ).first()
 
-        # Get the project request
-        project_request = (await session.exec(select(ProjectRequest).where(ProjectRequest.id == request_id))).first()
         if not project_request:
             raise HTTPException(status_code=404, detail="Project request not found")
 
-        # Update the request
+        # Update request status
         project_request.status = request_update.status
-        project_request.rejection_reason = request_update.rejection_reason
         project_request.resolved_at = datetime.now(timezone.utc)
+        if request_update.status == ProjectRequestStatus.REJECTED:
+            project_request.rejection_reason = request_update.rejection_reason
 
         session.add(project_request)
         await session.commit()
-        await session.refresh(project_request)
 
         # If request is approved, create the project
         if request_update.status == ProjectRequestStatus.APPROVED:
@@ -110,7 +105,7 @@ async def update_project_request(
             await session.commit()
             await session.refresh(new_project)
 
-            # Add requester as a user
+            # Add requester as a user with full permissions
             requester = (await session.exec(select(User).where(User.id == project_request.requester_id))).first()
             if requester:
                 new_project.users = [requester]
@@ -120,10 +115,13 @@ async def update_project_request(
                     grantee_id=requester.id,
                     permission_level="USER",
                     resource_type="project",
+                    can_read=True,
+                    can_run=True,
+                    can_edit=True
                 )
                 session.add(permission)
 
-            # Add other requested users
+            # Add other requested users with default permissions
             for user_id in project_request.requested_users:
                 user = (await session.exec(select(User).where(User.id == user_id))).first()
                 if user:
@@ -136,6 +134,9 @@ async def update_project_request(
                         grantee_id=user.id,
                         permission_level="USER",
                         resource_type="project",
+                        can_read=True,
+                        can_run=False,
+                        can_edit=False
                     )
                     session.add(permission)
 

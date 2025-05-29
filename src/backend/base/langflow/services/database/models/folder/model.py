@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 from uuid import UUID, uuid4
 
 from sqlalchemy import Text, UniqueConstraint, Table, Column as SAColumn, ForeignKey
@@ -8,6 +8,13 @@ from langflow.services.database.models.flow.model import Flow, FlowRead
 # from langflow.services.database.models.folder.user_link import folder_user_link
 from langflow.services.database.models.user.model import User
 from langflow.services.database.models.resource_permission import ResourcePermission
+
+
+class UserPermission(SQLModel):
+    id: UUID
+    can_read: bool = True
+    can_run: bool = False
+    can_edit: bool = False
 
 
 class FolderBase(SQLModel):
@@ -47,20 +54,17 @@ class Folder(FolderBase, table=True):  # type: ignore[call-arg]
 
 
 class FolderCreate(FolderBase):
-    components_list: list[UUID] | None = None
-    flows_list: list[UUID] | None = None
-    users: list[UUID] = Field(default_factory=list)
+    users: List[UserPermission] = []
 
 
 class FolderRead(FolderBase):
     id: UUID
-    parent_id: UUID | None = Field()
+    parent_id: UUID | None = None
+    user_id: UUID | None = None
 
 
-class FolderReadWithFlows(FolderBase):
-    id: UUID
-    parent_id: UUID | None = Field()
-    flows: list[FlowRead] = Field(default=[])
+class FolderReadWithFlows(FolderRead):
+    flows: list[FlowRead] = []
 
 
 class FolderUpdate(SQLModel):

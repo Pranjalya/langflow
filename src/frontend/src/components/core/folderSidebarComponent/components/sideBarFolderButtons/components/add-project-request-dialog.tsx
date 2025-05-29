@@ -1,21 +1,29 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import MultiselectComponent from "@/components/core/parameterRenderComponent/components/multiselectComponent";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useEffect, useState } from "react";
 import { useGetUsers } from "@/controllers/API/queries/auth/use-get-users-page";
 import useAuthStore from "@/stores/authStore";
 
+interface UserPermission {
+  id: string;
+  username: string;
+  can_read: boolean;
+  can_run: boolean;
+  can_edit: boolean;
+}
+
 interface AddProjectRequestDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (data: { project_name: string; justification: string; requested_users: string[] }) => void;
+  onSubmit: (data: { project_name: string; justification: string; requested_users: UserPermission[] }) => void;
   isLoading: boolean;
 }
 
 export const AddProjectRequestDialog = ({ open, onOpenChange, onSubmit, isLoading }: AddProjectRequestDialogProps) => {
   const [projectName, setProjectName] = useState("");
   const [justification, setJustification] = useState("");
-  const [users, setUsers] = useState<string[]>([]);
+  const [userPermissions, setUserPermissions] = useState<UserPermission[]>([]);
   const [touched, setTouched] = useState(false);
 
   // Get current user
@@ -45,10 +53,16 @@ export const AddProjectRequestDialog = ({ open, onOpenChange, onSubmit, isLoadin
 
   // Ensure current user is always selected when dialog opens
   useEffect(() => {
-    if (open && currentUserId) {
-      setUsers((prev) => {
-        if (!prev.includes(currentUserId)) {
-          return [currentUserId, ...prev.filter((id) => id !== currentUserId)];
+    if (open && currentUserId && currentUsername) {
+      setUserPermissions((prev) => {
+        if (!prev.some(p => p.id === currentUserId)) {
+          return [{
+            id: currentUserId,
+            username: currentUsername,
+            can_read: true,
+            can_run: true,
+            can_edit: true
+          }, ...prev.filter(p => p.id !== currentUserId)];
         }
         return prev;
       });
@@ -56,38 +70,59 @@ export const AddProjectRequestDialog = ({ open, onOpenChange, onSubmit, isLoadin
     if (!open) {
       setProjectName("");
       setJustification("");
-      setUsers(currentUserId ? [currentUserId] : []);
+      setUserPermissions(currentUserId && currentUsername ? [{
+        id: currentUserId,
+        username: currentUsername,
+        can_read: true,
+        can_run: true,
+        can_edit: true
+      }] : []);
       setTouched(false);
     }
-  }, [open, currentUserId]);
+  }, [open, currentUserId, currentUsername]);
 
-  // For the dropdown: use usernames as options
-  const usernameOptions = userOptions.map((u) => u.username);
-  // For the dropdown value: convert selected user ids to usernames
-  const selectedUsernames = users.map((id) => idToUsername[id]).filter(Boolean);
+  const handleUserSelect = (username: string) => {
+    const userId = usernameToId[username];
+    if (!userId) return;
 
-  // Prevent removal of current user (by username)
-  const handleUsersChange = (value: string[]) => {
-    if (!currentUserId || !currentUsername) return;
-    // Always keep current user's username in the list
-    if (!value.includes(currentUsername)) {
-      value = [currentUsername, ...value];
-    }
-    // Convert usernames to ids, filter out any not in usernameToId
-    const newIds = value.map((username) => usernameToId[username]).filter(Boolean);
-    // Always keep current user id
-    if (!newIds.includes(currentUserId)) {
-      setUsers([currentUserId, ...newIds]);
-    } else {
-      setUsers(newIds);
-    }
+    setUserPermissions(prev => {
+      if (!prev.some(p => p.id === userId)) {
+        return [...prev, {
+          id: userId,
+          username,
+          can_read: true,
+          can_run: false,
+          can_edit: false
+        }];
+      }
+      return prev;
+    });
+  };
+
+  const handleUserDeselect = (username: string) => {
+    const userId = usernameToId[username];
+    if (!userId || userId === currentUserId) return; // Prevent removing current user
+
+    setUserPermissions(prev => prev.filter(p => p.id !== userId));
+  };
+
+  const handlePermissionChange = (userId: string, permission: 'can_read' | 'can_run' | 'can_edit', value: boolean) => {
+    if (userId === currentUserId) return; // Prevent changing current user's permissions
+
+    setUserPermissions(prev => prev.map(p => 
+      p.id === userId ? { ...p, [permission]: value } : p
+    ));
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
     setTouched(true);
     if (!projectName.trim() || !justification.trim()) return;
-    onSubmit({ project_name: projectName.trim(), justification: justification.trim(), requested_users: users });
+    onSubmit({ 
+      project_name: projectName.trim(), 
+      justification: justification.trim(), 
+      requested_users: userPermissions 
+    });
     onOpenChange(false);
   };
 
@@ -125,15 +160,73 @@ export const AddProjectRequestDialog = ({ open, onOpenChange, onSubmit, isLoadin
           </div>
           <div className="flex flex-col gap-1">
             <label className="font-medium text-sm">Users to include</label>
-            <MultiselectComponent
-              disabled={usersStatus === "pending"}
-              value={selectedUsernames}
-              options={usernameOptions}
-              handleOnNewValue={({ value }) => handleUsersChange(value)}
-              id="users-with-access"
-              editNode={false}
-            />
-            <span className="text-xs text-muted-foreground">Search and select users to include in the project. You (the requester) are always included.</span>
+            <div className="border rounded p-2">
+              {userPermissions.map(user => (
+                <div key={user.id} className="flex items-center justify-between py-2 border-b last:border-b-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">{user.username}</span>
+                    {user.id === currentUserId && <span className="text-xs text-muted-foreground">(You)</span>}
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id={`read-${user.id}`}
+                        checked={user.can_read}
+                        onCheckedChange={(checked) => handlePermissionChange(user.id, 'can_read', checked as boolean)}
+                        disabled={user.id === currentUserId}
+                      />
+                      <label htmlFor={`read-${user.id}`} className="text-sm">Read</label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id={`run-${user.id}`}
+                        checked={user.can_run}
+                        onCheckedChange={(checked) => handlePermissionChange(user.id, 'can_run', checked as boolean)}
+                        disabled={user.id === currentUserId}
+                      />
+                      <label htmlFor={`run-${user.id}`} className="text-sm">Run</label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id={`edit-${user.id}`}
+                        checked={user.can_edit}
+                        onCheckedChange={(checked) => handlePermissionChange(user.id, 'can_edit', checked as boolean)}
+                        disabled={user.id === currentUserId}
+                      />
+                      <label htmlFor={`edit-${user.id}`} className="text-sm">Edit</label>
+                    </div>
+                    {user.id !== currentUserId && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleUserDeselect(user.username)}
+                        className="h-6 w-6 p-0"
+                      >
+                        ×
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+              <div className="mt-2">
+                <select
+                  className="w-full border rounded px-2 py-1 text-sm"
+                  onChange={(e) => handleUserSelect(e.target.value)}
+                  value=""
+                >
+                  <option value="">Add user...</option>
+                  {userOptions
+                    .filter(u => !userPermissions.some(p => p.id === u.id))
+                    .map(u => (
+                      <option key={u.id} value={u.username}>
+                        {u.username}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            </div>
+            <span className="text-xs text-muted-foreground">Select users and set their permissions. You (the requester) have full access.</span>
           </div>
           <DialogFooter>
             <Button
