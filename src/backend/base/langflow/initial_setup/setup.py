@@ -1034,7 +1034,10 @@ async def setup_admin_permissions(session: AsyncSession, admin_user_id: UUID) ->
                 grantor_id=admin_user_id,
                 grantee_id=admin_user_id,
                 resource_type='user',
-                permission_level='SUPER_ADMIN'
+                permission_level='SUPER_ADMIN',
+                can_read=True,
+                can_run=True,
+                can_edit=True
             )
             session.add(admin_permission)
             await session.commit()

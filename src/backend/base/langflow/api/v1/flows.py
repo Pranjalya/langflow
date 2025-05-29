@@ -167,8 +167,11 @@ async def create_flow(
                     resource_id=db_flow.id,
                     grantor_id=current_user.id,
                     grantee_id=folder_permission.grantee_id,
-                    permission_level=folder_permission.permission_level,
-                    resource_type='FLOW'
+                    permission_level='USER',  # Default to USER since we're using granular permissions
+                    resource_type='FLOW',
+                    can_read=folder_permission.can_read,
+                    can_run=folder_permission.can_run,
+                    can_edit=folder_permission.can_edit
                 )
                 session.add(flow_permission)
             await session.commit()
@@ -308,7 +311,8 @@ async def _read_flow(
             select(ResourcePermission).where(
                 ResourcePermission.resource_id == flow_id,
                 ResourcePermission.grantee_id == user_id,
-                ResourcePermission.resource_type == 'FLOW'
+                ResourcePermission.resource_type == 'FLOW',
+                ResourcePermission.can_read == True  # Check for read permission
             )
         ).first()
         if permission:
@@ -484,8 +488,11 @@ async def create_flows(
                     resource_id=db_flow.id,
                     grantor_id=current_user.id,
                     grantee_id=folder_permission.grantee_id,
-                    permission_level=folder_permission.permission_level,
-                    resource_type='FLOW'
+                    permission_level='USER',  # Default to USER since we're using granular permissions
+                    resource_type='FLOW',
+                    can_read=folder_permission.can_read,
+                    can_run=folder_permission.can_run,
+                    can_edit=folder_permission.can_edit
                 )
                 session.add(flow_permission)
     

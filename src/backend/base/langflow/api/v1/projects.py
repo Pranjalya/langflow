@@ -280,8 +280,11 @@ async def update_project(
                     resource_id=project_id,
                     grantor_id=current_user.id,
                     grantee_id=user_id,
-                    permission_level='USER',
-                    resource_type='project'
+                    permission_level='USER',  # Default to USER since we're using granular permissions
+                    resource_type='project',
+                    can_read=True,  # Default permissions for new users
+                    can_run=True,
+                    can_edit=False
                 )
                 session.add(permission)
             

@@ -14,6 +14,7 @@ from langflow.services.database.models.project_request.model import (
     ProjectRequestUpdate,
 )
 from langflow.services.database.models.user.model import User
+from langflow.services.database.models.resource_permission import ResourcePermission
 
 router = APIRouter(prefix="/project-requests", tags=["Project Requests"])
 
@@ -93,7 +94,6 @@ async def update_project_request(
         # If request is approved, create the project
         if request_update.status == ProjectRequestStatus.APPROVED:
             from langflow.services.database.models.folder.model import Folder
-            from langflow.services.database.models.resource_permission import ResourcePermission
 
             # Create new project
             new_project = Folder(
@@ -113,8 +113,8 @@ async def update_project_request(
                     resource_id=new_project.id,
                     grantor_id=current_user.id,
                     grantee_id=requester.id,
-                    permission_level="USER",
-                    resource_type="project",
+                    permission_level='USER',  # Default to USER since we're using granular permissions
+                    resource_type='project',
                     can_read=True,
                     can_run=True,
                     can_edit=True
@@ -132,8 +132,8 @@ async def update_project_request(
                         resource_id=new_project.id,
                         grantor_id=current_user.id,
                         grantee_id=user.id,
-                        permission_level="USER",
-                        resource_type="project",
+                        permission_level='USER',  # Default to USER since we're using granular permissions
+                        resource_type='project',
                         can_read=True,
                         can_run=False,
                         can_edit=False
