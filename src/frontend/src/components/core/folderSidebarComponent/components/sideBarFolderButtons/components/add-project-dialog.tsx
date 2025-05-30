@@ -33,6 +33,7 @@ export const AddProjectDialog = ({ open, onOpenChange, onSubmit, isLoading }: Ad
   const isAdmin = useAuthStore((state) => state.isAdmin);
   const currentUserId = userData?.id;
   const currentUsername = userData?.username;
+  const userLevel = userData?.user_level;
 
   // Fetch users
   const { mutate: fetchUsers, data: usersData, status: usersStatus } = useGetUsers({});
@@ -126,15 +127,15 @@ export const AddProjectDialog = ({ open, onOpenChange, onSubmit, isLoading }: Ad
     setTouched(true);
     if (!name.trim()) return;
 
-    if (isAdmin) {
-      // Admin creates project directly
+    if (userLevel === "SUPER_ADMIN") {
+      // Super admin creates project directly
       onSubmit({ 
         name: name.trim(), 
         description: description.trim(), 
         users: userPermissions 
       });
-    } else {
-      // Non-admin creates project request
+    } else if (userLevel === "PROJECT_ADMIN") {
+      // Project admin creates project request
       createProjectRequest({
         project_name: name.trim(),
         justification: justification.trim(),
@@ -148,7 +149,7 @@ export const AddProjectDialog = ({ open, onOpenChange, onSubmit, isLoading }: Ad
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{isAdmin ? "Create New Project" : "Request New Project"}</DialogTitle>
+          <DialogTitle>{userLevel === "SUPER_ADMIN" ? "Create New Project" : "Request New Project"}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1">
@@ -164,7 +165,7 @@ export const AddProjectDialog = ({ open, onOpenChange, onSubmit, isLoading }: Ad
             />
             {touched && !name.trim() && <span className="text-xs text-red-500">Project name is required.</span>}
           </div>
-          {isAdmin ? (
+          {userLevel === "SUPER_ADMIN" ? (
             <div className="flex flex-col gap-1">
               <label htmlFor="project-description" className="font-medium text-sm">Description</label>
               <textarea
@@ -257,16 +258,21 @@ export const AddProjectDialog = ({ open, onOpenChange, onSubmit, isLoading }: Ad
                 </select>
               </div>
             </div>
-            <span className="text-xs text-muted-foreground">Select users and set their permissions. You (the creator) have full access.</span>
           </div>
           <DialogFooter>
             <Button
-              type="submit"
-              disabled={isLoading || isCreatingRequest || !name.trim() || (!isAdmin && !justification.trim())}
-              loading={isLoading || isCreatingRequest}
-              className="w-full"
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={isLoading || isCreatingRequest}
             >
-              {isAdmin ? "Create Project" : "Submit Request"}
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={isLoading || isCreatingRequest}
+            >
+              {userLevel === "SUPER_ADMIN" ? "Create Project" : "Submit Request"}
             </Button>
           </DialogFooter>
         </form>

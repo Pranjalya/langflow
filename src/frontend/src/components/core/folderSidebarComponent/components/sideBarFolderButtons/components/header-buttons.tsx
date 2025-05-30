@@ -44,6 +44,11 @@ export const HeaderButtons = ({
     });
   };
 
+  // Check if user has permission to create project or request
+  const canCreateProject = userData?.user_level === "SUPER_ADMIN";
+  const canRequestProject = userData?.user_level === "PROJECT_ADMIN";
+  const isPlusButtonDisabled = !canCreateProject && !canRequestProject;
+
   return (
     <>
       {!isDismissedDialog && (
@@ -74,7 +79,7 @@ export const HeaderButtons = ({
           />
           <AddFolderButton
             onClick={() => setOpenAddDialog(true)}
-            disabled={isUpdatingFolder}
+            disabled={isUpdatingFolder || isPlusButtonDisabled}
             loading={isPending}
           />
         </div>
