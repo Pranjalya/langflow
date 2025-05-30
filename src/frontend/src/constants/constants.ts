@@ -617,6 +617,7 @@ export const CONTROL_NEW_USER = {
   password: "",
   is_active: false,
   is_superuser: false,
+  user_level: "USER",
 };
 
 export const tabsCode = [];

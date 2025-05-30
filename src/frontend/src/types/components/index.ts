@@ -425,6 +425,7 @@ export type UserInputType = {
   password: string;
   is_active?: boolean;
   is_superuser?: boolean;
+  user_level?: string;
   id?: string;
   create_at?: string;
   updated_at?: string;

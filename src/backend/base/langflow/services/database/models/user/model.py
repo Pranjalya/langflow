@@ -1,9 +1,10 @@
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
+from enum import Enum
 
 from pydantic import BaseModel
-from sqlalchemy import JSON, Column
+from sqlalchemy import JSON, Column, Enum as SQLEnum
 from sqlmodel import Field, Relationship, SQLModel
 
 from langflow.schema.serialize import UUIDstr
@@ -15,6 +16,12 @@ if TYPE_CHECKING:
     from langflow.services.database.models.flow import Flow
     from langflow.services.database.models.variable import Variable
     from langflow.services.database.models.folder import Folder
+
+
+class UserLevel(str, Enum):
+    USER = "USER"
+    SUPER_ADMIN = "SUPER_ADMIN"
+    PROJECT_ADMIN = "PROJECT_ADMIN"
 
 
 class UserOptin(BaseModel):
@@ -31,6 +38,10 @@ class User(SQLModel, table=True):  # type: ignore[call-arg]
     profile_image: str | None = Field(default=None, nullable=True)
     is_active: bool = Field(default=False)
     is_superuser: bool = Field(default=False)
+    user_level: UserLevel = Field(
+        default=UserLevel.USER,
+        sa_column=Column(SQLEnum(UserLevel), nullable=False)
+    )
     create_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_login_at: datetime | None = Field(default=None, nullable=True)
@@ -81,6 +92,7 @@ class UserRead(SQLModel):
     store_api_key: str | None = Field(nullable=True)
     is_active: bool = Field()
     is_superuser: bool = Field()
+    user_level: UserLevel = Field()
     create_at: datetime = Field()
     updated_at: datetime = Field()
     last_login_at: datetime | None = Field(nullable=True)
@@ -93,5 +105,6 @@ class UserUpdate(SQLModel):
     password: str | None = None
     is_active: bool | None = None
     is_superuser: bool | None = None
+    user_level: UserLevel | None = None
     last_login_at: datetime | None = None
     optins: dict[str, Any] | None = None

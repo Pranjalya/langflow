@@ -147,11 +147,20 @@ export default function AdminPage() {
   }
 
   function handleEditUser(userId: string, user: UserInputType) {
+    const userEdit = cloneDeep(user);
+    if (userEdit.is_superuser) {
+      userEdit.user_level = "SUPER_ADMIN";
+    } else if (userEdit.user_level === "PROJECT_ADMIN") {
+      userEdit.user_level = "PROJECT_ADMIN";
+    } else {
+      userEdit.user_level = "USER";
+    }
+
     mutateUpdateUser(
-      { user_id: userId, user },
+      { user_id: userId, user: userEdit },
       {
         onSuccess: () => {
-          resetFilter();
+          getUsers();
           setSuccessData({
             title: USER_EDIT_SUCCESS_ALERT,
           });
@@ -169,6 +178,9 @@ export default function AdminPage() {
   function handleDisableUser(check, userId, user) {
     const userEdit = cloneDeep(user);
     userEdit.is_active = !check;
+    if (!check && userEdit.is_superuser) {
+      userEdit.user_level = "USER";
+    }
 
     mutateUpdateUser(
       { user_id: userId, user: userEdit },
@@ -192,6 +204,11 @@ export default function AdminPage() {
   function handleSuperUserEdit(check, userId, user) {
     const userEdit = cloneDeep(user);
     userEdit.is_superuser = !check;
+    if (!check) {
+      userEdit.user_level = "SUPER_ADMIN";
+    } else {
+      userEdit.user_level = user.user_level === "PROJECT_ADMIN" ? "PROJECT_ADMIN" : "USER";
+    }
 
     mutateUpdateUser(
       { user_id: userId, user: userEdit },
@@ -213,14 +230,24 @@ export default function AdminPage() {
   }
 
   function handleNewUser(user: UserInputType) {
-    mutateAddUser(user, {
+    const userEdit = cloneDeep(user);
+    if (userEdit.is_superuser) {
+      userEdit.user_level = "SUPER_ADMIN";
+    } else if (userEdit.user_level === "PROJECT_ADMIN") {
+      userEdit.user_level = "PROJECT_ADMIN";
+    } else {
+      userEdit.user_level = "USER";
+    }
+
+    mutateAddUser(userEdit, {
       onSuccess: (res) => {
         mutateUpdateUser(
           {
             user_id: res["id"],
             user: {
-              is_active: user.is_active,
-              is_superuser: user.is_superuser,
+              is_active: userEdit.is_active,
+              is_superuser: userEdit.is_superuser,
+              user_level: userEdit.user_level,
             },
           },
           {
@@ -340,6 +367,7 @@ export default function AdminPage() {
                           <TableHead className="h-10">Username</TableHead>
                           <TableHead className="h-10">Active</TableHead>
                           <TableHead className="h-10">Superuser</TableHead>
+                          <TableHead className="h-10">Project Admin</TableHead>
                           <TableHead className="h-10">Created At</TableHead>
                           <TableHead className="h-10">Updated At</TableHead>
                           <TableHead className="h-10 w-[100px] text-right"></TableHead>
@@ -414,6 +442,40 @@ export default function AdminPage() {
                                 <ConfirmationModal.Trigger>
                                   <div className="flex w-fit">
                                     <CheckBoxDiv checked={user.is_superuser} />
+                                  </div>
+                                </ConfirmationModal.Trigger>
+                              </ConfirmationModal>
+                            </TableCell>
+                            <TableCell className="relative left-1 truncate py-2 text-align-last-left">
+                              <ConfirmationModal
+                                size="x-small"
+                                title="Edit"
+                                titleHeader={`${user.username}`}
+                                modalContentTitle="Attention!"
+                                cancelText="Cancel"
+                                confirmationText="Confirm"
+                                icon={"UserCog2"}
+                                data={user}
+                                index={index}
+                                onConfirm={(index, user) => {
+                                  const userEdit = cloneDeep(user);
+                                  if (userEdit.is_superuser) {
+                                    userEdit.user_level = "SUPER_ADMIN";
+                                  } else {
+                                    userEdit.user_level = userEdit.user_level === "PROJECT_ADMIN" ? "USER" : "PROJECT_ADMIN";
+                                  }
+                                  handleEditUser(user.id, userEdit);
+                                }}
+                              >
+                                <ConfirmationModal.Content>
+                                  <span>
+                                    Are you completely confident about the changes
+                                    you are making to this user?
+                                  </span>
+                                </ConfirmationModal.Content>
+                                <ConfirmationModal.Trigger>
+                                  <div className="flex w-fit">
+                                    <CheckBoxDiv checked={user.user_level === "PROJECT_ADMIN" || user.user_level === "SUPER_ADMIN"} />
                                   </div>
                                 </ConfirmationModal.Trigger>
                               </ConfirmationModal>
