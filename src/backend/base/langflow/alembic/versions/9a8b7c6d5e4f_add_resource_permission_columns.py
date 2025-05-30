@@ -25,14 +25,23 @@ def upgrade() -> None:
     conn = op.get_bind()
     inspector = Inspector.from_engine(conn)
     
-    # Add new columns to resource_permission table
-    if 'resource_permission' in inspector.get_table_names():
-        # Add new boolean columns
-        op.add_column('resource_permission', sa.Column('can_read', sa.Boolean(), nullable=False, server_default='false'))
-        op.add_column('resource_permission', sa.Column('can_run', sa.Boolean(), nullable=False, server_default='false'))
-        op.add_column('resource_permission', sa.Column('can_edit', sa.Boolean(), nullable=False, server_default='false'))
+    table_name = 'resource_permission'
+    
+    if table_name in inspector.get_table_names():
+        columns = inspector.get_columns(table_name)
+        existing_column_names = {col['name'] for col in columns}
+
+        # Columns to add
+        columns_to_add = {
+            'can_read': sa.Column('can_read', sa.Boolean(), nullable=False, server_default='false'),
+            'can_run': sa.Column('can_run', sa.Boolean(), nullable=False, server_default='false'),
+            'can_edit': sa.Column('can_edit', sa.Boolean(), nullable=False, server_default='false'),
+        }
+
+        for col_name, col_obj in columns_to_add.items():
+            if col_name not in existing_column_names:
+                op.add_column(table_name, col_obj)
         
-        # Update existing permissions based on permission_level
         conn.execute(sa.text("""
             UPDATE resource_permission 
             SET can_read = true,
@@ -53,6 +62,7 @@ def upgrade() -> None:
                 WHEN permission_level = 'admin' THEN 'SUPER_ADMIN'
                 ELSE 'USER'
             END
+            WHERE permission_level IN ('admin', 'USER')
         """))
 
 
@@ -60,11 +70,17 @@ def downgrade() -> None:
     conn = op.get_bind()
     inspector = Inspector.from_engine(conn)
     
-    if 'resource_permission' in inspector.get_table_names():
-        # Drop the new columns
-        op.drop_column('resource_permission', 'can_read')
-        op.drop_column('resource_permission', 'can_run')
-        op.drop_column('resource_permission', 'can_edit')
+    table_name = 'resource_permission'
+
+    if table_name in inspector.get_table_names():
+        columns = inspector.get_columns(table_name)
+        existing_column_names = {col['name'] for col in columns}
+
+        columns_to_drop = ['can_read', 'can_run', 'can_edit']
+
+        for col_name in columns_to_drop:
+            if col_name in existing_column_names:
+                op.drop_column(table_name, col_name)
         
         # Revert permission_level values
         conn.execute(sa.text("""
@@ -73,4 +89,5 @@ def downgrade() -> None:
                 WHEN permission_level = 'SUPER_ADMIN' THEN 'admin'
                 ELSE 'USER'
             END
-        """)) 
+            WHERE permission_level IN ('SUPER_ADMIN', 'USER')
+        """))
