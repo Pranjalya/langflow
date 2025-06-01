@@ -34,6 +34,7 @@ from langflow.services.database.models.folder.model import (
 from langflow.services.database.models.folder.pagination_model import FolderWithPaginatedFlows
 from langflow.services.database.models.user.model import User
 from langflow.services.database.models.resource_permission import ResourcePermission
+from langflow.api.v1.schemas import ProjectUserPermissionsResponse, ProjectUserPermission, ProjectUserPermissionUpdate
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
@@ -439,3 +440,225 @@ async def upload_file(
         flow.folder_id = new_project.id
 
     return await create_flows(session=session, flow_list=flow_list, current_user=current_user)
+
+
+@router.get("/{project_id}/users", response_model=ProjectUserPermissionsResponse, status_code=200)
+async def get_project_users(
+    *,
+    session: DbSession,
+    project_id: UUID,
+    current_user: CurrentActiveUser,
+):
+    """Get all users and their permissions for a specific project."""
+    try:
+        # First check if the project exists and user has access
+        project = (await session.exec(
+            select(Folder).where(
+                Folder.id == project_id,
+                or_(
+                    Folder.user_id == current_user.id,
+                    and_(
+                        ResourcePermission.resource_id == Folder.id,
+                        ResourcePermission.grantee_id == current_user.id,
+                        ResourcePermission.resource_type == 'project'
+                    )
+                )
+            )
+        )).first()
+
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        # Get all permissions for this project
+        permissions = (await session.exec(
+            select(ResourcePermission)
+            .where(
+                ResourcePermission.resource_id == project_id,
+                ResourcePermission.resource_type == 'project'
+            )
+        )).all()
+
+        # Get all users who have permissions
+        user_ids = [p.grantee_id for p in permissions]
+        users = (await session.exec(
+            select(User).where(User.id.in_(user_ids))
+        )).all()
+
+        # Create response
+        user_permissions = []
+        for permission in permissions:
+            user = next((u for u in users if u.id == permission.grantee_id), None)
+            if user:
+                user_permissions.append(
+                    ProjectUserPermission(
+                        user_id=user.id,
+                        username=user.username,
+                        can_read=permission.can_read,
+                        can_run=permission.can_run,
+                        can_edit=permission.can_edit
+                    )
+                )
+
+        # Add the project owner if not already in the list
+        if project.user_id not in [p.user_id for p in user_permissions]:
+            owner = (await session.exec(
+                select(User).where(User.id == project.user_id)
+            )).first()
+            if owner:
+                user_permissions.append(
+                    ProjectUserPermission(
+                        user_id=owner.id,
+                        username=owner.username,
+                        can_read=True,
+                        can_run=True,
+                        can_edit=True
+                    )
+                )
+
+        return ProjectUserPermissionsResponse(
+            users=user_permissions,
+            total_count=len(user_permissions)
+        )
+
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.patch("/{project_id}/users/{user_id}", response_model=ProjectUserPermission, status_code=200)
+async def update_project_user_permissions(
+    *,
+    session: DbSession,
+    project_id: UUID,
+    user_id: UUID,
+    permissions: ProjectUserPermissionUpdate,
+    current_user: CurrentActiveUser,
+):
+    """Update a user's permissions for a specific project."""
+    try:
+        # First check if the project exists and user has access
+        project = (await session.exec(
+            select(Folder).where(
+                Folder.id == project_id,
+                or_(
+                    Folder.user_id == current_user.id,
+                    and_(
+                        ResourcePermission.resource_id == Folder.id,
+                        ResourcePermission.grantee_id == current_user.id,
+                        ResourcePermission.resource_type == 'project',
+                        ResourcePermission.can_edit == True
+                    )
+                )
+            )
+        )).first()
+
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        # Check if the target user exists
+        target_user = (await session.exec(
+            select(User).where(User.id == user_id)
+        )).first()
+
+        if not target_user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Get existing permission or create new one
+        permission = (await session.exec(
+            select(ResourcePermission).where(
+                ResourcePermission.resource_id == project_id,
+                ResourcePermission.grantee_id == user_id,
+                ResourcePermission.resource_type == 'project'
+            )
+        )).first()
+
+        if not permission:
+            # Create new permission
+            permission = ResourcePermission(
+                resource_id=project_id,
+                grantor_id=current_user.id,
+                grantee_id=user_id,
+                resource_type='project',
+                can_read=permissions.can_read or False,
+                can_run=permissions.can_run or False,
+                can_edit=permissions.can_edit or False
+            )
+            session.add(permission)
+        else:
+            # Update existing permission
+            if permissions.can_read is not None:
+                permission.can_read = permissions.can_read
+            if permissions.can_run is not None:
+                permission.can_run = permissions.can_run
+            if permissions.can_edit is not None:
+                permission.can_edit = permissions.can_edit
+
+        await session.commit()
+        await session.refresh(permission)
+
+        return ProjectUserPermission(
+            user_id=user_id,
+            can_read=permission.can_read,
+            can_run=permission.can_run,
+            can_edit=permission.can_edit
+        )
+
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.delete("/{project_id}/users/{user_id}", status_code=204)
+async def remove_project_user(
+    *,
+    session: DbSession,
+    project_id: UUID,
+    user_id: UUID,
+    current_user: CurrentActiveUser,
+):
+    """Remove a user's permissions from a project."""
+    try:
+        # First check if the project exists and user has access
+        project = (await session.exec(
+            select(Folder).where(
+                Folder.id == project_id,
+                or_(
+                    Folder.user_id == current_user.id,
+                    and_(
+                        ResourcePermission.resource_id == Folder.id,
+                        ResourcePermission.grantee_id == current_user.id,
+                        ResourcePermission.resource_type == 'project',
+                        ResourcePermission.can_edit == True
+                    )
+                )
+            )
+        )).first()
+
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        # Get the permission to delete
+        permission = (await session.exec(
+            select(ResourcePermission).where(
+                ResourcePermission.resource_id == project_id,
+                ResourcePermission.grantee_id == user_id,
+                ResourcePermission.resource_type == 'project'
+            )
+        )).first()
+
+        if not permission:
+            raise HTTPException(status_code=404, detail="User permission not found")
+
+        # Don't allow removing the project owner
+        if project.user_id == user_id:
+            raise HTTPException(status_code=400, detail="Cannot remove project owner")
+
+        await session.delete(permission)
+        await session.commit()
+
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(status_code=500, detail=str(e)) from e

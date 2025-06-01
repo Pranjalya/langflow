@@ -406,3 +406,22 @@ class MCPSettings(BaseModel):
     action_description: str | None = None
     name: str | None = None
     description: str | None = None
+
+
+class ProjectUserPermission(BaseModel):
+    user_id: UUID
+    username: str | None = None
+    can_read: bool
+    can_run: bool
+    can_edit: bool
+
+
+class ProjectUserPermissionUpdate(BaseModel):
+    can_read: bool | None = None
+    can_run: bool | None = None
+    can_edit: bool | None = None
+
+
+class ProjectUserPermissionsResponse(BaseModel):
+    users: list[ProjectUserPermission]
+    total_count: int

@@ -7,6 +7,13 @@ export type FolderType = {
   parent_id: string;
   flows: FlowType[];
   components: string[];
+  users?: {
+    id: string;
+    username: string;
+    can_read: boolean;
+    can_run: boolean;
+    can_edit: boolean;
+  }[];
 };
 
 export type PaginatedFolderType = {

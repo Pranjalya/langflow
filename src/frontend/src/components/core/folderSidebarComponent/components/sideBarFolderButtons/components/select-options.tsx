@@ -11,6 +11,9 @@ import { FolderType } from "@/pages/MainPage/entities";
 import { cn } from "@/utils/utils";
 import { handleSelectChange } from "../helpers/handle-select-change";
 import { FolderSelectItem } from "./folder-select-item";
+import useAuthStore from "@/stores/authStore";
+import { useState } from "react";
+import { EditProjectDialog } from "./edit-project-dialog";
 
 export const SelectOptions = ({
   item,
@@ -27,18 +30,26 @@ export const SelectOptions = ({
   handleSelectFolderToRename: (folder: FolderType) => void;
   checkPathName: (folderId: string) => boolean;
 }) => {
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const userLevel = useAuthStore((state) => state.userData?.user_level);
+  const canEditDetails = userLevel === "SUPER_ADMIN" || userLevel === "PROJECT_ADMIN";
+
   return (
     <div>
       <Select
-        onValueChange={(value) =>
-          handleSelectChange(
-            value,
-            item,
-            handleDeleteFolder,
-            handleDownloadFolder,
-            handleSelectFolderToRename,
-          )
-        }
+        onValueChange={(value) => {
+          if (value === "edit-details") {
+            setShowEditDialog(true);
+          } else {
+            handleSelectChange(
+              value,
+              item,
+              handleDeleteFolder,
+              handleDownloadFolder,
+              handleSelectFolderToRename,
+            );
+          }
+        }}
         value=""
       >
         <ShadTooltip content="Options" side="right" styleClasses="z-50">
@@ -74,6 +85,15 @@ export const SelectOptions = ({
           >
             <FolderSelectItem name="Download" iconName="Download" />
           </SelectItem>
+          {canEditDetails && (
+            <SelectItem
+              value="edit-details"
+              data-testid="btn-edit-project-details"
+              className="text-xs"
+            >
+              <FolderSelectItem name="Edit Details" iconName="Users" />
+            </SelectItem>
+          )}
           {index > 0 && (
             <SelectItem
               value="delete"
@@ -85,6 +105,19 @@ export const SelectOptions = ({
           )}
         </SelectContent>
       </Select>
+
+      {canEditDetails && (
+        <EditProjectDialog
+          open={showEditDialog}
+          onOpenChange={setShowEditDialog}
+          projectId={item.id!}
+          projectName={item.name}
+          onSuccess={() => {
+            // Refresh the project list or update the current project data
+            window.location.reload();
+          }}
+        />
+      )}
     </div>
   );
 };
