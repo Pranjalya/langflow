@@ -34,7 +34,7 @@ from langflow.services.database.models.folder.model import Folder
 from langflow.services.deps import get_settings_service
 from langflow.services.settings.service import SettingsService
 from langflow.utils.compression import compress_response
-from langflow.services.database.models.resource_permission import ResourcePermission
+from langflow.services.database.models.resource_permission import ResourcePermission, ResourceType
 
 # build router
 router = APIRouter(prefix="/flows", tags=["Flows"])
@@ -208,83 +208,87 @@ async def read_flows(
     params: Annotated[Params, Depends()],
     header_flows: bool = False,
 ):
-    """Retrieve a list of flows with pagination support.
-
-    Args:
-        current_user (User): The current authenticated user.
-        session (Session): The database session.
-        settings_service (SettingsService): The settings service.
-        components_only (bool, optional): Whether to return only components. Defaults to False.
-
-        get_all (bool, optional): Whether to return all flows without pagination. Defaults to True.
-        **This field must be True because of backward compatibility with the frontend - Release: 1.0.20**
-
-        folder_id (UUID, optional): The project ID. Defaults to None.
-        params (Params): Pagination parameters.
-        remove_example_flows (bool, optional): Whether to remove example flows. Defaults to False.
-        header_flows (bool, optional): Whether to return only specific headers of the flows. Defaults to False.
-
-    Returns:
-        list[FlowRead] | Page[FlowRead] | list[FlowHeader]
-        A list of flows or a paginated response containing the list of flows or a list of flow headers.
-    """
     try:
         auth_settings = get_settings_service().auth_settings
 
-        default_folder = (await session.exec(select(Folder).where(Folder.name == DEFAULT_FOLDER_NAME))).first()
+        # User's default folder (not global)
+        default_folder_result = await session.exec(
+            select(Folder).where(Folder.name == DEFAULT_FOLDER_NAME, Folder.user_id == current_user.id)
+        )
+        default_folder = default_folder_result.first()
         default_folder_id = default_folder.id if default_folder else None
 
-        starter_folder = (await session.exec(select(Folder).where(Folder.name == STARTER_FOLDER_NAME))).first()
+        # Starter folder (global)
+        starter_folder_result = await session.exec(
+            select(Folder).where(Folder.name == STARTER_FOLDER_NAME)
+        )
+        starter_folder = starter_folder_result.first()
         starter_folder_id = starter_folder.id if starter_folder else None
-
-        if not starter_folder and not default_folder:
-            raise HTTPException(
-                status_code=404,
-                detail="Starter project and default project not found. Please create a project and add flows to it.",
-            )
-
-        if not folder_id:
-            folder_id = default_folder_id
-
+        
+        # Base query for flows owned by the user or globally accessible if AUTO_LOGIN
         if auth_settings.AUTO_LOGIN:
-            stmt = select(Flow).where(
-                (Flow.user_id == None) | (Flow.user_id == current_user.id)  # noqa: E711
+            base_select_stmt = select(Flow).where(
+                or_(Flow.user_id == current_user.id, Flow.user_id.is_(None))
             )
         else:
-            stmt = select(Flow).where(Flow.user_id == current_user.id)
+            base_select_stmt = select(Flow).where(Flow.user_id == current_user.id)
 
-        if remove_example_flows:
-            stmt = stmt.where(Flow.folder_id != starter_folder_id)
+        # Permission query for flows accessible via ResourcePermission
+        permission_select_stmt = select(Flow).join(
+            ResourcePermission,
+            Flow.id == ResourcePermission.resource_id
+        ).where(
+            ResourcePermission.grantee_id == current_user.id,
+            ResourcePermission.resource_type == ResourceType.FLOW,
+            ResourcePermission.can_read == True
+        )
+
+        # Union the two queries. UNION ensures distinct results.
+        unioned_flows_query = base_select_stmt.union(permission_select_stmt)
+
+        # Create a selectable from the union (this is the subquery)
+        stmt_from_union = select(Flow).select_from(unioned_flows_query.subquery(name="all_accessible_flows"))
+
+        # Apply common filters that apply to the result of the union
+        filters_after_union = []
+        if remove_example_flows and starter_folder_id:
+            filters_after_union.append(col(Flow.folder_id) != starter_folder_id)
 
         if components_only:
-            stmt = stmt.where(Flow.is_component == True)  # noqa: E712
+            filters_after_union.append(col(Flow.is_component) == True) # noqa: E712
+
+        if not get_all:
+            target_folder_id_for_pagination = folder_id
+            if target_folder_id_for_pagination is None:
+                target_folder_id_for_pagination = default_folder_id
+            
+            filters_after_union.append(col(Flow.folder_id) == target_folder_id_for_pagination)
+
+        if filters_after_union:
+            stmt_from_union = stmt_from_union.where(and_(*filters_after_union))
+
+        ordered_stmt = stmt_from_union.order_by(col(Flow.updated_at).desc(), col(Flow.name))
 
         if get_all:
-            flows = (await session.exec(stmt)).all()
-            flows = validate_is_component(flows)
-            if components_only:
-                flows = [flow for flow in flows if flow.is_component]
-            if remove_example_flows and starter_folder_id:
-                flows = [flow for flow in flows if flow.folder_id != starter_folder_id]
+            flows_query_result = (await session.exec(ordered_stmt)).all()
+            validated_flows = validate_is_component(list(flows_query_result))
+
             if header_flows:
-                # Convert to FlowHeader objects and compress the response
-                flow_headers = [FlowHeader.model_validate(flow, from_attributes=True) for flow in flows]
+                flow_headers = [FlowHeader.model_validate(flow, from_attributes=True) for flow in validated_flows]
                 return compress_response(flow_headers)
 
-            # Compress the full flows response
-            return compress_response(flows)
-
-        stmt = stmt.where(Flow.folder_id == folder_id)
-
-        import warnings
-
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore", category=DeprecationWarning, module=r"fastapi_pagination\.ext\.sqlalchemy"
-            )
-            return await apaginate(session, stmt, params=params)
+            return compress_response(validated_flows)
+        else:
+            # For pagination, ordered_stmt already has all necessary filters and ordering
+            import warnings
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore", category=DeprecationWarning, module=r"fastapi_pagination\.ext\.sqlalchemy"
+                )
+                return await apaginate(session, ordered_stmt, params=params)
 
     except Exception as e:
+        logger.exception(f"Error in read_flows: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 async def _read_flow(
