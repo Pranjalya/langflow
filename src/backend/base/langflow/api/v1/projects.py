@@ -33,7 +33,7 @@ from langflow.services.database.models.folder.model import (
 )
 from langflow.services.database.models.folder.pagination_model import FolderWithPaginatedFlows
 from langflow.services.database.models.user.model import User
-from langflow.services.database.models.resource_permission import ResourcePermission
+from langflow.services.database.models.resource_permission import ResourcePermission, PermissionLevel
 from langflow.api.v1.schemas import ProjectUserPermissionsResponse, ProjectUserPermission, ProjectUserPermissionUpdate
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
@@ -580,6 +580,7 @@ async def update_project_user_permissions(
                 grantor_id=current_user.id,
                 grantee_id=user_id,
                 resource_type='project',
+                permission_level=PermissionLevel.USER,
                 can_read=permissions.can_read or False,
                 can_run=permissions.can_run or False,
                 can_edit=permissions.can_edit or False
