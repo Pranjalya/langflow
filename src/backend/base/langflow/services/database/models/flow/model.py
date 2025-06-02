@@ -192,10 +192,16 @@ class Flow(FlowBase, table=True):  # type: ignore[call-arg]
     id: UUID = Field(default_factory=uuid4, primary_key=True, unique=True)
     data: dict | None = Field(default=None, sa_column=Column(JSON))
     user_id: UUID | None = Field(index=True, foreign_key="user.id", nullable=True)
-    user: "User" = Relationship(back_populates="flows")
+    user: "User" = Relationship(back_populates="flows", sa_relationship_kwargs={"foreign_keys": "[Flow.user_id]"})
     icon: str | None = Field(default=None, nullable=True)
     tags: list[str] | None = Field(sa_column=Column(JSON), default=[])
     locked: bool | None = Field(default=False, nullable=True)
+    locked_by: UUID | None = Field(default=None, foreign_key="user.id", nullable=True, index=True)
+    lock_updated_at: datetime | None = Field(default=None, nullable=True)
+    locked_by_user: Optional["User"] = Relationship(
+        back_populates="locked_flows",
+        sa_relationship_kwargs={"foreign_keys": "[Flow.locked_by]"}
+    )
     folder_id: UUID | None = Field(default=None, foreign_key="folder.id", nullable=True, index=True)
     fs_path: str | None = Field(default=None, nullable=True)
     folder: Optional["Folder"] = Relationship(back_populates="flows")
@@ -228,6 +234,9 @@ class FlowRead(FlowBase):
     user_id: UUID | None = Field()
     folder_id: UUID | None = Field()
     tags: list[str] | None = Field(None, description="The tags of the flow")
+    locked: bool | None = Field(None, description="Whether the flow is locked")
+    locked_by: UUID | None = Field(None, description="ID of the user who locked the flow")
+    lock_updated_at: datetime | None = Field(None, description="When the flow was locked")
 
 
 class FlowHeader(BaseModel):

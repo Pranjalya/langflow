@@ -31,6 +31,12 @@ export type FlowType = {
   folder_id?: string;
   webhook?: boolean;
   locked?: boolean | null;
+  locked_by?: string | null;
+  locked_by_user?: {
+    id: string;
+    username: string;
+  } | null;
+  lock_updated_at?: string | null;
   public?: boolean;
   access_type?: "PUBLIC" | "PRIVATE" | "PROTECTED";
   mcp_enabled?: boolean;

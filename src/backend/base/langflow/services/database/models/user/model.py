@@ -50,7 +50,7 @@ class User(SQLModel, table=True):  # type: ignore[call-arg]
         sa_relationship_kwargs={"cascade": "delete"},
     )
     store_api_key: str | None = Field(default=None, nullable=True)
-    flows: list["Flow"] = Relationship(back_populates="user")
+    flows: list["Flow"] = Relationship(back_populates="user", sa_relationship_kwargs={"foreign_keys": "[Flow.user_id]"})
     variables: list["Variable"] = Relationship(
         back_populates="user",
         sa_relationship_kwargs={"cascade": "delete"},
@@ -67,6 +67,10 @@ class User(SQLModel, table=True):  # type: ignore[call-arg]
             "secondaryjoin": "Folder.id == ResourcePermission.resource_id",
             "viewonly": True,
         },
+    )
+    locked_flows: list["Flow"] = Relationship(
+        back_populates="locked_by_user",
+        sa_relationship_kwargs={"foreign_keys": "[Flow.locked_by]"}
     )
     # shared_folders: list["Folder"] = Relationship(
     #     back_populates="users",

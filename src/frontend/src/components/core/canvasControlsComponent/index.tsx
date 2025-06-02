@@ -13,9 +13,12 @@ import {
   type ReactFlowState,
 } from "@xyflow/react";
 import { cloneDeep } from "lodash";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { shallow } from "zustand/shallow";
+import FlowLockModal from "@/modals/flowLockModal";
+import { acquireLock, releaseLock } from "@/controllers/API/flows";
+import useAlertStore from "@/stores/alertStore";
 
 type CustomControlButtonProps = {
   iconName: string;
@@ -79,6 +82,9 @@ const CanvasControls = ({ children }) => {
   );
   const setCurrentFlow = useFlowStore((state) => state.setCurrentFlow);
   const autoSaving = useFlowsManagerStore((state) => state.autoSaving);
+  const [showLockModal, setShowLockModal] = useState(false);
+  const currentFlow = useFlowStore((state) => state.currentFlow);
+  const setErrorData = useAlertStore((state) => state.setErrorData);
 
   useEffect(() => {
     store.setState({
@@ -88,69 +94,101 @@ const CanvasControls = ({ children }) => {
     });
   }, [isLocked]);
 
-  const handleSaveFlow = useCallback(() => {
-    const currentFlow = useFlowStore.getState().currentFlow;
+  const handleLockClick = useCallback(async () => {
     if (!currentFlow) return;
-    const newFlow = cloneDeep(currentFlow);
-    newFlow.locked = isInteractive;
-    if (autoSaving) {
-      saveFlow(newFlow);
-    } else {
-      setCurrentFlow(newFlow);
-    }
-  }, [isInteractive, autoSaving, saveFlow, setCurrentFlow]);
 
-  const onToggleInteractivity = useCallback(() => {
-    store.setState({
-      nodesDraggable: !isInteractive,
-      nodesConnectable: !isInteractive,
-      elementsSelectable: !isInteractive,
-    });
-    handleSaveFlow();
-  }, [isInteractive, store, handleSaveFlow]);
+    try {
+      if (isLocked) {
+        setShowLockModal(true);
+      } else {
+        const updatedFlow = await acquireLock(currentFlow.id);
+        setCurrentFlow(updatedFlow);
+        store.setState({
+          nodesDraggable: false,
+          nodesConnectable: false,
+          elementsSelectable: false,
+        });
+      }
+    } catch (error) {
+      setErrorData({
+        title: "Error",
+        list: [error instanceof Error ? error.message : "Failed to update lock status"],
+      });
+    }
+  }, [isLocked, currentFlow, setCurrentFlow, store, setErrorData]);
+
+  const handleUnlock = useCallback(async () => {
+    if (!currentFlow) return;
+
+    try {
+      const updatedFlow = await releaseLock(currentFlow.id);
+      setCurrentFlow(updatedFlow);
+      store.setState({
+        nodesDraggable: true,
+        nodesConnectable: true,
+        elementsSelectable: true,
+      });
+      setShowLockModal(false);
+    } catch (error) {
+      setErrorData({
+        title: "Error",
+        list: [error instanceof Error ? error.message : "Failed to update lock status"],
+      });
+    }
+  }, [currentFlow, setCurrentFlow, store, setErrorData]);
 
   return (
-    <Panel
-      data-testid="canvas_controls"
-      className="react-flow__controls !left-auto !m-2 flex !flex-col gap-1.5 rounded-md border border-border bg-background fill-foreground stroke-foreground p-0.5 text-primary [&>button]:border-0 [&>button]:bg-background hover:[&>button]:bg-accent"
-      position="bottom-left"
-    >
-      {/* Zoom In */}
-      <CustomControlButton
-        iconName="ZoomIn"
-        tooltipText="Zoom In"
-        onClick={zoomIn}
-        disabled={maxZoomReached}
-        testId="zoom_in"
-      />
-      {/* Zoom Out */}
-      <CustomControlButton
-        iconName="ZoomOut"
-        tooltipText="Zoom Out"
-        onClick={zoomOut}
-        disabled={minZoomReached}
-        testId="zoom_out"
-      />
-      {/* Zoom To Fit */}
-      <CustomControlButton
-        iconName="maximize"
-        tooltipText="Fit To Zoom"
-        onClick={fitView}
-        testId="fit_view"
-      />
-      {children}
-      {/* Lock/Unlock */}
-      <CustomControlButton
-        iconName={isInteractive ? "LockOpen" : "Lock"}
-        tooltipText={isInteractive ? "Lock" : "Unlock"}
-        onClick={onToggleInteractivity}
-        backgroundClasses={isInteractive ? "" : "bg-destructive"}
-        iconClasses={
-          isInteractive ? "" : "text-primary-foreground dark:text-primary"
-        }
-        testId="lock_unlock"
-      />
-    </Panel>
+    <>
+      <Panel
+        data-testid="canvas_controls"
+        className="react-flow__controls !left-auto !m-2 flex !flex-col gap-1.5 rounded-md border border-border bg-background fill-foreground stroke-foreground p-0.5 text-primary [&>button]:border-0 [&>button]:bg-background hover:[&>button]:bg-accent"
+        position="bottom-left"
+      >
+        {/* Zoom In */}
+        <CustomControlButton
+          iconName="ZoomIn"
+          tooltipText="Zoom In"
+          onClick={zoomIn}
+          disabled={maxZoomReached}
+          testId="zoom_in"
+        />
+        {/* Zoom Out */}
+        <CustomControlButton
+          iconName="ZoomOut"
+          tooltipText="Zoom Out"
+          onClick={zoomOut}
+          disabled={minZoomReached}
+          testId="zoom_out"
+        />
+        {/* Zoom To Fit */}
+        <CustomControlButton
+          iconName="maximize"
+          tooltipText="Fit To Zoom"
+          onClick={fitView}
+          testId="fit_view"
+        />
+        {children}
+        {/* Lock/Unlock */}
+        <CustomControlButton
+          iconName={isInteractive ? "LockOpen" : "Lock"}
+          tooltipText={isInteractive ? "Lock" : "Unlock"}
+          onClick={handleLockClick}
+          backgroundClasses={isInteractive ? "" : "bg-destructive"}
+          iconClasses={
+            isInteractive ? "" : "text-primary-foreground dark:text-primary"
+          }
+          testId="lock_unlock"
+        />
+      </Panel>
+      {currentFlow && (
+        <FlowLockModal
+          open={showLockModal}
+          setOpen={setShowLockModal}
+          flow={currentFlow}
+          onUnlock={handleUnlock}
+        />
+      )}
+    </>
   );
 };
 

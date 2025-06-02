@@ -333,22 +333,35 @@ async def read_flow(
     flow_id: UUID,
     current_user: CurrentActiveUser,
 ):
-    """Read a flow."""
-    # Fetch the flow and its folder
-    flow = (await session.exec(select(Flow).where(Flow.id == flow_id))).first()
-    if not flow:
-        raise HTTPException(status_code=404, detail="Flow not found")
+    try:
+        # First check if the flow exists
+        db_flow = (await session.exec(
+            select(Flow).where(Flow.id == flow_id)
+        )).first()
+        
+        if not db_flow:
+            raise HTTPException(status_code=404, detail="Flow not found")
 
-    # Fetch the folder and check access
-    folder = (await session.exec(select(Folder).where(Folder.id == flow.folder_id).options(selectinload(Folder.users)))).first()
-    if not folder:
-        raise HTTPException(status_code=404, detail="Project not found")
+        # Check if user has read permission
+        permission = (await session.exec(
+            select(ResourcePermission).where(
+                ResourcePermission.resource_id == flow_id,
+                ResourcePermission.resource_type == ResourceType.FLOW,
+                ResourcePermission.grantee_id == current_user.id,
+                ResourcePermission.can_read == True
+            )
+        )).first()
 
-    # Check if the user is the owner or in the shared users list
-    if not (folder.user_id == current_user.id or any(user.id == current_user.id for user in folder.users)):
-        raise HTTPException(status_code=403, detail="You do not have access to this flow.")
+        # If user is not the owner and doesn't have read permission, deny access
+        if db_flow.user_id != current_user.id and not permission:
+            raise HTTPException(status_code=403, detail="You don't have permission to read this flow")
 
-    return flow
+        return db_flow
+
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/public_flow/{flow_id}", response_model=FlowRead, status_code=200)
@@ -374,65 +387,60 @@ async def update_flow(
     flow: FlowUpdate,
     current_user: CurrentActiveUser,
 ):
-    """Update a flow."""
-    settings_service = get_settings_service()
     try:
-        db_flow = await _read_flow(
-            session=session,
-            flow_id=flow_id,
-            user_id=current_user.id,
-            settings_service=settings_service,
-        )
-
+        # First check if the flow exists and get its current state
+        db_flow = await _read_flow(session=session, flow_id=flow_id, user_id=current_user.id, settings_service=get_settings_service())
         if not db_flow:
             raise HTTPException(status_code=404, detail="Flow not found")
 
-        update_data = flow.model_dump(exclude_unset=True, exclude_none=True)
+        # Check if user has edit permission
+        permission = (await session.exec(
+            select(ResourcePermission).where(
+                ResourcePermission.resource_id == flow_id,
+                ResourcePermission.resource_type == ResourceType.FLOW,
+                ResourcePermission.grantee_id == current_user.id,
+                ResourcePermission.can_edit == True
+            )
+        )).first()
 
-        # Specifically handle endpoint_name when it's explicitly set to null or empty string
-        if flow.endpoint_name is None or flow.endpoint_name == "":
-            update_data["endpoint_name"] = None
+        # If user is not the owner and doesn't have edit permission, deny access
+        if db_flow.user_id != current_user.id and not permission:
+            raise HTTPException(status_code=403, detail="You don't have permission to edit this flow")
 
-        if settings_service.settings.remove_api_keys:
-            update_data = remove_api_keys(update_data)
+        # Handle locking logic
+        if flow.locked is not None:
+            # Only users with edit permission can lock/unlock
+            if db_flow.user_id != current_user.id and not permission:
+                raise HTTPException(status_code=403, detail="You don't have permission to lock/unlock this flow")
+            
+            # If trying to lock and flow is already locked by someone else
+            if flow.locked and db_flow.locked and db_flow.locked_by != current_user.id:
+                raise HTTPException(status_code=409, detail="Flow is already locked by another user")
+            
+            # Update lock information
+            if flow.locked:
+                db_flow.locked_by = current_user.id
+                db_flow.lock_updated_at = datetime.now(timezone.utc)
+            else:
+                db_flow.locked_by = None
+                db_flow.lock_updated_at = None
 
-        for key, value in update_data.items():
-            setattr(db_flow, key, value)
+        # Update other flow fields
+        for field, value in flow.model_dump(exclude_unset=True).items():
+            if field != "locked":  # We already handled locking above
+                setattr(db_flow, field, value)
 
-        await _verify_fs_path(db_flow.fs_path)
-
-        webhook_component = get_webhook_component_in_flow(db_flow.data)
-        db_flow.webhook = webhook_component is not None
         db_flow.updated_at = datetime.now(timezone.utc)
-
-        if db_flow.folder_id is None:
-            default_folder = (await session.exec(select(Folder).where(Folder.name == DEFAULT_FOLDER_NAME))).first()
-            if default_folder:
-                db_flow.folder_id = default_folder.id
-
-        session.add(db_flow)
         await session.commit()
         await session.refresh(db_flow)
-
         await _save_flow_to_fs(db_flow)
 
+        return db_flow
+
     except Exception as e:
-        if "UNIQUE constraint failed" in str(e):
-            # Get the name of the column that failed
-            columns = str(e).split("UNIQUE constraint failed: ")[1].split(".")[1].split("\n")[0]
-            # UNIQUE constraint failed: flow.user_id, flow.name
-            # or UNIQUE constraint failed: flow.name
-            # if the column has id in it, we want the other column
-            column = columns.split(",")[1] if "id" in columns.split(",")[0] else columns.split(",")[0]
-            raise HTTPException(
-                status_code=400, detail=f"{column.capitalize().replace('_', ' ')} must be unique"
-            ) from e
-
-        if hasattr(e, "status_code"):
-            raise HTTPException(status_code=e.status_code, detail=str(e)) from e
+        if isinstance(e, HTTPException):
+            raise
         raise HTTPException(status_code=500, detail=str(e)) from e
-
-    return db_flow
 
 
 @router.delete("/{flow_id}", status_code=200)
@@ -658,4 +666,110 @@ async def read_basic_examples(
         return all_starter_folder_flows_response  # noqa: TRY300
 
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post("/{flow_id}/lock", response_model=FlowRead, status_code=200)
+async def acquire_lock(
+    *,
+    session: DbSession,
+    flow_id: UUID,
+    current_user: CurrentActiveUser,
+):
+    """Acquire a lock on a flow."""
+    try:
+        # First check if the flow exists
+        db_flow = (await session.exec(
+            select(Flow).where(Flow.id == flow_id)
+        )).first()
+        
+        if not db_flow:
+            raise HTTPException(status_code=404, detail="Flow not found")
+
+        # Check if user has edit permission
+        permission = (await session.exec(
+            select(ResourcePermission).where(
+                ResourcePermission.resource_id == flow_id,
+                ResourcePermission.resource_type == ResourceType.FLOW,
+                ResourcePermission.grantee_id == current_user.id,
+                ResourcePermission.can_edit == True
+            )
+        )).first()
+
+        # If user is not the owner and doesn't have edit permission, deny access
+        if db_flow.user_id != current_user.id and not permission:
+            raise HTTPException(status_code=403, detail="You don't have permission to lock this flow")
+
+        # Check if flow is already locked
+        if db_flow.locked:
+            raise HTTPException(status_code=409, detail="Flow is already locked")
+
+        # Acquire lock
+        db_flow.locked = True
+        db_flow.locked_by = current_user.id
+        db_flow.lock_updated_at = datetime.now(timezone.utc)
+        
+        await session.commit()
+        await session.refresh(db_flow)
+        
+        return db_flow
+
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post("/{flow_id}/unlock", response_model=FlowRead, status_code=200)
+async def release_lock(
+    *,
+    session: DbSession,
+    flow_id: UUID,
+    current_user: CurrentActiveUser,
+):
+    """Release a lock on a flow."""
+    try:
+        # First check if the flow exists
+        db_flow = (await session.exec(
+            select(Flow).where(Flow.id == flow_id)
+        )).first()
+        
+        if not db_flow:
+            raise HTTPException(status_code=404, detail="Flow not found")
+
+        # Check if user has edit permission
+        permission = (await session.exec(
+            select(ResourcePermission).where(
+                ResourcePermission.resource_id == flow_id,
+                ResourcePermission.resource_type == ResourceType.FLOW,
+                ResourcePermission.grantee_id == current_user.id,
+                ResourcePermission.can_edit == True
+            )
+        )).first()
+
+        # If user is not the owner and doesn't have edit permission, deny access
+        if db_flow.user_id != current_user.id and not permission:
+            raise HTTPException(status_code=403, detail="You don't have permission to unlock this flow")
+
+        # Check if flow is locked
+        if not db_flow.locked:
+            raise HTTPException(status_code=409, detail="Flow is not locked")
+
+        # Check if user is the one who locked it
+        if db_flow.locked_by != current_user.id:
+            raise HTTPException(status_code=403, detail="Only the user who locked the flow can unlock it")
+
+        # Release lock
+        db_flow.locked = False
+        db_flow.locked_by = None
+        db_flow.lock_updated_at = datetime.now(timezone.utc)
+        
+        await session.commit()
+        await session.refresh(db_flow)
+        
+        return db_flow
+
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
         raise HTTPException(status_code=500, detail=str(e)) from e
