@@ -414,12 +414,14 @@ class ProjectUserPermission(BaseModel):
     can_read: bool
     can_run: bool
     can_edit: bool
+    is_project_admin: bool = False
 
 
 class ProjectUserPermissionUpdate(BaseModel):
     can_read: bool | None = None
     can_run: bool | None = None
     can_edit: bool | None = None
+    is_project_admin: bool | None = None
 
 
 class ProjectUserPermissionsResponse(BaseModel):

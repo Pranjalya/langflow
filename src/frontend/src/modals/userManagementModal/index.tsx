@@ -33,7 +33,6 @@ export default function UserManagementModal({
   const [confirmPassword, setConfirmPassword] = useState(data?.password ?? "");
   const [isActive, setIsActive] = useState(data?.is_active ?? false);
   const [isSuperUser, setIsSuperUser] = useState(data?.is_superuser ?? false);
-  const [isProjectAdmin, setIsProjectAdmin] = useState(data?.user_level === "PROJECT_ADMIN");
   const [inputState, setInputState] = useState<UserInputType>(CONTROL_NEW_USER);
   const { userData } = useContext(AuthContext);
 
@@ -60,20 +59,11 @@ export default function UserManagementModal({
         setUserName(data.username);
         setIsActive(data.is_active);
         setIsSuperUser(data.is_superuser);
-        setIsProjectAdmin(data.user_level === "PROJECT_ADMIN");
 
         handleInput({ target: { name: "username", value: data.username } });
         handleInput({ target: { name: "is_active", value: !!data.is_active } });
         handleInput({ target: { name: "is_superuser", value: !!data.is_superuser } });
-        handleInput({ target: { name: "user_level", value: data.user_level || "USER" } });
-
-        if (data.is_superuser) {
-          handleInput({ target: { name: "user_level", value: "SUPER_ADMIN" } });
-        } else if (data.user_level === "PROJECT_ADMIN") {
-          handleInput({ target: { name: "user_level", value: "PROJECT_ADMIN" } });
-        } else {
-          handleInput({ target: { name: "user_level", value: "USER" } });
-        }
+        handleInput({ target: { name: "user_level", value: data.is_superuser ? "SUPER_ADMIN" : "USER" } });
       }
     }
   }, [open]);
@@ -84,7 +74,6 @@ export default function UserManagementModal({
     setConfirmPassword("");
     setIsActive(false);
     setIsSuperUser(false);
-    setIsProjectAdmin(false);
     setInputState(CONTROL_NEW_USER);
   }
 
@@ -276,56 +265,25 @@ export default function UserManagementModal({
                 </div>
               </Form.Field>
               {userData?.is_superuser && (
-                <>
-                  <Form.Field name="is_superuser">
-                    <div>
-                      <Form.Label className="data-[invalid]:label-invalid mr-3">
-                        Superuser
-                      </Form.Label>
-                      <Form.Control asChild>
-                        <Checkbox
-                          checked={isSuperUser}
-                          id="is_superuser"
-                          className="relative top-0.5"
-                          onCheckedChange={(value) => {
-                            handleInput({ target: { name: "is_superuser", value: Boolean(value) } });
-                            setIsSuperUser(Boolean(value));
-                            if (value) {
-                              handleInput({ target: { name: "user_level", value: "SUPER_ADMIN" } });
-                            } else {
-                              handleInput({ target: { name: "user_level", value: isProjectAdmin ? "PROJECT_ADMIN" : "USER" } });
-                            }
-                          }}
-                        />
-                      </Form.Control>
-                    </div>
-                  </Form.Field>
-                  <Form.Field name="user_level">
-                    <div>
-                      <Form.Label className="data-[invalid]:label-invalid mr-3">
-                        Project Admin
-                      </Form.Label>
-                      <Form.Control asChild>
-                        <Checkbox
-                          checked={isProjectAdmin}
-                          id="user_level"
-                          className="relative top-0.5"
-                          disabled={isSuperUser}
-                          onCheckedChange={(value) => {
-                            const newValue = Boolean(value);
-                            setIsProjectAdmin(newValue);
-                            handleInput({
-                              target: { 
-                                name: "user_level", 
-                                value: newValue ? "PROJECT_ADMIN" : "USER" 
-                              },
-                            });
-                          }}
-                        />
-                      </Form.Control>
-                    </div>
-                  </Form.Field>
-                </>
+                <Form.Field name="is_superuser">
+                  <div>
+                    <Form.Label className="data-[invalid]:label-invalid mr-3">
+                      Superuser
+                    </Form.Label>
+                    <Form.Control asChild>
+                      <Checkbox
+                        checked={isSuperUser}
+                        id="is_superuser"
+                        className="relative top-0.5"
+                        onCheckedChange={(value) => {
+                          handleInput({ target: { name: "is_superuser", value: Boolean(value) } });
+                          setIsSuperUser(Boolean(value));
+                          handleInput({ target: { name: "user_level", value: value ? "SUPER_ADMIN" : "USER" } });
+                        }}
+                      />
+                    </Form.Control>
+                  </div>
+                </Form.Field>
               )}
             </div>
           </div>

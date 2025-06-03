@@ -495,7 +495,8 @@ async def get_project_users(
                         username=user.username,
                         can_read=permission.can_read,
                         can_run=permission.can_run,
-                        can_edit=permission.can_edit
+                        can_edit=permission.can_edit,
+                        is_project_admin=permission.permission_level == PermissionLevel.PROJECT_ADMIN
                     )
                 )
 
@@ -511,7 +512,8 @@ async def get_project_users(
                         username=owner.username,
                         can_read=True,
                         can_run=True,
-                        can_edit=True
+                        can_edit=True,
+                        is_project_admin=True
                     )
                 )
 
@@ -580,7 +582,7 @@ async def update_project_user_permissions(
                 grantor_id=current_user.id,
                 grantee_id=user_id,
                 resource_type='project',
-                permission_level=PermissionLevel.USER,
+                permission_level=PermissionLevel.PROJECT_ADMIN if permissions.is_project_admin else PermissionLevel.USER,
                 can_read=permissions.can_read or False,
                 can_run=permissions.can_run or False,
                 can_edit=permissions.can_edit or False
@@ -594,6 +596,8 @@ async def update_project_user_permissions(
                 permission.can_run = permissions.can_run
             if permissions.can_edit is not None:
                 permission.can_edit = permissions.can_edit
+            if permissions.is_project_admin is not None:
+                permission.permission_level = PermissionLevel.PROJECT_ADMIN if permissions.is_project_admin else PermissionLevel.USER
 
         await session.commit()
         await session.refresh(permission)

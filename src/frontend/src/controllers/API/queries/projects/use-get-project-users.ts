@@ -7,6 +7,7 @@ interface ProjectUser {
   can_read: boolean;
   can_run: boolean;
   can_edit: boolean;
+  is_project_admin?: boolean;
 }
 
 interface ProjectUsersResponse {

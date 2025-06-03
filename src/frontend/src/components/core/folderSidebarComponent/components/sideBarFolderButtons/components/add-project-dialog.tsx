@@ -12,6 +12,7 @@ interface UserPermission {
   can_read: boolean;
   can_run: boolean;
   can_edit: boolean;
+  is_project_admin?: boolean;
 }
 
 interface AddProjectDialogProps {
@@ -68,7 +69,8 @@ export const AddProjectDialog = ({ open, onOpenChange, onSubmit, isLoading }: Ad
             username: currentUsername,
             can_read: true,
             can_run: true,
-            can_edit: true
+            can_edit: true,
+            is_project_admin: true
           }, ...prev.filter(p => p.id !== currentUserId)];
         }
         return prev;
@@ -83,7 +85,8 @@ export const AddProjectDialog = ({ open, onOpenChange, onSubmit, isLoading }: Ad
         username: currentUsername,
         can_read: true,
         can_run: true,
-        can_edit: true
+        can_edit: true,
+        is_project_admin: true
       }] : []);
       setTouched(false);
     }
@@ -100,7 +103,8 @@ export const AddProjectDialog = ({ open, onOpenChange, onSubmit, isLoading }: Ad
           username,
           can_read: true,
           can_run: false,
-          can_edit: false
+          can_edit: false,
+          is_project_admin: false
         }];
       }
       return prev;
@@ -114,7 +118,7 @@ export const AddProjectDialog = ({ open, onOpenChange, onSubmit, isLoading }: Ad
     setUserPermissions(prev => prev.filter(p => p.id !== userId));
   };
 
-  const handlePermissionChange = (userId: string, permission: 'can_read' | 'can_run' | 'can_edit', value: boolean) => {
+  const handlePermissionChange = (userId: string, permission: 'can_read' | 'can_run' | 'can_edit' | 'is_project_admin', value: boolean) => {
     if (userId === currentUserId) return; // Prevent changing current user's permissions
 
     setUserPermissions(prev => prev.map(p => 
@@ -226,6 +230,15 @@ export const AddProjectDialog = ({ open, onOpenChange, onSubmit, isLoading }: Ad
                         disabled={user.id === currentUserId}
                       />
                       <label htmlFor={`edit-${user.id}`} className="text-sm">Edit</label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id={`admin-${user.id}`}
+                        checked={user.is_project_admin}
+                        onCheckedChange={(checked) => handlePermissionChange(user.id, 'is_project_admin', checked as boolean)}
+                        disabled={user.id === currentUserId}
+                      />
+                      <label htmlFor={`admin-${user.id}`} className="text-sm">Project Admin</label>
                     </div>
                     {user.id !== currentUserId && (
                       <Button

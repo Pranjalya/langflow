@@ -14,6 +14,7 @@ import { FolderSelectItem } from "./folder-select-item";
 import useAuthStore from "@/stores/authStore";
 import { useState } from "react";
 import { EditProjectDialog } from "./edit-project-dialog";
+import { useGetProjectUsers } from "@/controllers/API/queries/projects/use-get-project-users";
 
 export const SelectOptions = ({
   item,
@@ -31,8 +32,18 @@ export const SelectOptions = ({
   checkPathName: (folderId: string) => boolean;
 }) => {
   const [showEditDialog, setShowEditDialog] = useState(false);
-  const userLevel = useAuthStore((state) => state.userData?.user_level);
-  const canEditDetails = userLevel === "SUPER_ADMIN" || userLevel === "PROJECT_ADMIN";
+  const userData = useAuthStore((state) => state.userData);
+  const currentUserId = userData?.id;
+  const userLevel = userData?.user_level;
+
+  // Get project users to check permissions
+  const { data: projectUsersData } = useGetProjectUsers(item.id!);
+
+  // Check if user is a project admin or super admin
+  const canEditDetails = userLevel === "SUPER_ADMIN" || 
+    (projectUsersData?.users?.some(user => 
+      user.user_id === currentUserId && user.is_project_admin
+    ));
 
   return (
     <div>

@@ -23,6 +23,7 @@ interface UserPermission {
   can_read: boolean;
   can_run: boolean;
   can_edit: boolean;
+  is_project_admin?: boolean;
 }
 
 interface EditProjectDialogProps {
@@ -102,12 +103,13 @@ export const EditProjectDialog = ({
         username: user.username,
         can_read: user.can_read,
         can_run: user.can_run,
-        can_edit: user.can_edit
+        can_edit: user.can_edit,
+        is_project_admin: user.is_project_admin
       })));
     }
   }, [projectUsersData, open]);
 
-  const handlePermissionChange = (userId: string, permission: 'can_read' | 'can_run' | 'can_edit', value: boolean) => {
+  const handlePermissionChange = (userId: string, permission: 'can_read' | 'can_run' | 'can_edit' | 'is_project_admin', value: boolean) => {
     if (userId === currentUserId) return; // Prevent changing current user's permissions
 
     setUserPermissions(prev => prev.map(p => 
@@ -166,7 +168,8 @@ export const EditProjectDialog = ({
           user_id: p.user_id,
           can_read: p.can_read,
           can_run: p.can_run,
-          can_edit: p.can_edit
+          can_edit: p.can_edit,
+          is_project_admin: p.is_project_admin
         }))
       },
       {
@@ -256,7 +259,7 @@ export const EditProjectDialog = ({
                 {userPermissions.map(user => (
                   <div key={user.user_id} className="flex items-center justify-between py-2 border-b last:border-b-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm">{user.username || user.user_id}</span>
+                      <span className="text-sm">{user.username}</span>
                       {user.user_id === currentUserId && <span className="text-xs text-muted-foreground">(You)</span>}
                     </div>
                     <div className="flex items-center gap-4">
@@ -287,16 +290,26 @@ export const EditProjectDialog = ({
                         />
                         <label htmlFor={`edit-${user.user_id}`} className="text-sm">Edit</label>
                       </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive/90"
-                        onClick={() => handleRemoveUser(user.user_id)}
-                        disabled={user.user_id === currentUserId || isRemoving}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id={`admin-${user.user_id}`}
+                          checked={user.is_project_admin}
+                          onCheckedChange={(checked) => handlePermissionChange(user.user_id, 'is_project_admin', checked as boolean)}
+                          disabled={user.user_id === currentUserId}
+                        />
+                        <label htmlFor={`admin-${user.user_id}`} className="text-sm">Project Admin</label>
+                      </div>
+                      {user.user_id !== currentUserId && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRemoveUser(user.user_id)}
+                          className="h-6 w-6 p-0"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
                     </div>
                   </div>
                 ))}

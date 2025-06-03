@@ -8,6 +8,7 @@ interface UpdateProjectUsersParams {
     can_read: boolean;
     can_run: boolean;
     can_edit: boolean;
+    is_project_admin?: boolean;
   }[];
 }
 
@@ -19,7 +20,8 @@ export const useUpdateProjectUsers = () => {
         api.patch(`/api/v1/projects/${params.projectId}/users/${user.user_id}`, {
           can_read: user.can_read,
           can_run: user.can_run,
-          can_edit: user.can_edit
+          can_edit: user.can_edit,
+          is_project_admin: user.is_project_admin
         })
       );
       
