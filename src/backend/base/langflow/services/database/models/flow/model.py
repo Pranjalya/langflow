@@ -237,6 +237,33 @@ class FlowRead(FlowBase):
     locked: bool | None = Field(None, description="Whether the flow is locked")
     locked_by: UUID | None = Field(None, description="ID of the user who locked the flow")
     lock_updated_at: datetime | None = Field(None, description="When the flow was locked")
+    locked_by_user: Optional[dict] = Field(None, description="User who locked the flow")
+
+    @field_serializer("locked_by_user")
+    def serialize_locked_by_user(self, value):
+        if not value:
+            return None
+        # If it's already a dictionary, return it as is
+        if isinstance(value, dict):
+            return value
+        # If it's a User object, convert it to a dict
+        return {
+            "id": str(value.id),
+            "username": value.username
+        }
+
+    @field_validator("locked_by_user", mode="before")
+    @classmethod
+    def validate_locked_by_user(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, dict):
+            return v
+        # If it's a User object, convert it to a dict
+        return {
+            "id": str(v.id),
+            "username": v.username
+        }
 
 
 class FlowHeader(BaseModel):

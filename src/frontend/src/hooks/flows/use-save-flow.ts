@@ -18,6 +18,16 @@ const useSaveFlow = () => {
   const saveFlow = async (flow?: FlowType): Promise<void> => {
     const currentFlow = useFlowStore.getState().currentFlow;
     const currentSavedFlow = useFlowsManagerStore.getState().currentFlow;
+
+    // Check if flow is locked
+    if (currentFlow?.locked) {
+      setErrorData({
+        title: "Cannot save flow",
+        list: ["This flow is locked and cannot be modified"],
+      });
+      return;
+    }
+
     if (
       customStringify(flow || currentFlow) !== customStringify(currentSavedFlow)
     ) {

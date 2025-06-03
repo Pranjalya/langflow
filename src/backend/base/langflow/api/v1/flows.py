@@ -35,6 +35,7 @@ from langflow.services.deps import get_settings_service
 from langflow.services.settings.service import SettingsService
 from langflow.utils.compression import compress_response
 from langflow.services.database.models.resource_permission import ResourcePermission, ResourceType
+from langflow.services.database.models.user.model import UserLevel
 
 # build router
 router = APIRouter(prefix="/flows", tags=["Flows"])
@@ -227,14 +228,14 @@ async def read_flows(
         
         # Base query for flows owned by the user or globally accessible if AUTO_LOGIN
         if auth_settings.AUTO_LOGIN:
-            base_select_stmt = select(Flow).where(
+            base_select_stmt = select(Flow).options(selectinload(Flow.locked_by_user)).where(
                 or_(Flow.user_id == current_user.id, Flow.user_id.is_(None))
             )
         else:
-            base_select_stmt = select(Flow).where(Flow.user_id == current_user.id)
+            base_select_stmt = select(Flow).options(selectinload(Flow.locked_by_user)).where(Flow.user_id == current_user.id)
 
         # Permission query for flows accessible via ResourcePermission
-        permission_select_stmt = select(Flow).join(
+        permission_select_stmt = select(Flow).options(selectinload(Flow.locked_by_user)).join(
             ResourcePermission,
             Flow.id == ResourcePermission.resource_id
         ).where(
@@ -299,7 +300,7 @@ async def _read_flow(
 ):
     """Read a flow."""
     auth_settings = settings_service.auth_settings
-    stmt = select(Flow).where(Flow.id == flow_id)
+    stmt = select(Flow).options(selectinload(Flow.locked_by_user)).where(Flow.id == flow_id)
     if auth_settings.AUTO_LOGIN:
         # If auto login is enable user_id can be current_user.id or None
         # so write an OR
@@ -321,7 +322,7 @@ async def _read_flow(
         ).first()
         if permission:
             # If user has permission, get the flow
-            flow = (await session.exec(select(Flow).where(Flow.id == flow_id))).first()
+            flow = (await session.exec(select(Flow).options(selectinload(Flow.locked_by_user)).where(Flow.id == flow_id))).first()
     
     return flow
 
@@ -336,7 +337,7 @@ async def read_flow(
     try:
         # First check if the flow exists
         db_flow = (await session.exec(
-            select(Flow).where(Flow.id == flow_id)
+            select(Flow).options(selectinload(Flow.locked_by_user)).where(Flow.id == flow_id)
         )).first()
         
         if not db_flow:
@@ -680,7 +681,7 @@ async def acquire_lock(
     try:
         # First check if the flow exists
         db_flow = (await session.exec(
-            select(Flow).where(Flow.id == flow_id)
+            select(Flow).options(selectinload(Flow.locked_by_user)).where(Flow.id == flow_id)
         )).first()
         
         if not db_flow:
@@ -731,7 +732,7 @@ async def release_lock(
     try:
         # First check if the flow exists
         db_flow = (await session.exec(
-            select(Flow).where(Flow.id == flow_id)
+            select(Flow).options(selectinload(Flow.locked_by_user)).where(Flow.id == flow_id)
         )).first()
         
         if not db_flow:
@@ -755,9 +756,9 @@ async def release_lock(
         if not db_flow.locked:
             raise HTTPException(status_code=409, detail="Flow is not locked")
 
-        # Check if user is the one who locked it
-        if db_flow.locked_by != current_user.id:
-            raise HTTPException(status_code=403, detail="Only the user who locked the flow can unlock it")
+        # Check if user is the one who locked it or is a super admin
+        if db_flow.locked_by != current_user.id and current_user.user_level != UserLevel.SUPER_ADMIN:
+            raise HTTPException(status_code=403, detail="Only the user who locked the flow or a super admin can unlock it")
 
         # Release lock
         db_flow.locked = False

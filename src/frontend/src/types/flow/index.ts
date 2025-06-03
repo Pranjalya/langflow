@@ -10,26 +10,16 @@ export type PaginatedFlowsType = {
   pages: number;
 };
 
-export type FlowType = {
-  name: string;
+export interface FlowType {
   id: string;
-  data: ReactFlowJsonObject<AllNodeType, EdgeType> | null;
-  description: string;
-  endpoint_name?: string | null;
+  name: string;
+  description?: string;
+  data?: ReactFlowJsonObject<AllNodeType, EdgeType> | null;
   style?: FlowStyleType;
   is_component?: boolean;
-  last_tested_version?: string;
-  updated_at?: string;
-  date_created?: string;
-  parent?: string;
-  folder?: string;
-  user_id?: string;
-  icon?: string;
-  gradient?: string;
-  tags?: string[];
-  icon_bg_color?: string;
   folder_id?: string;
-  webhook?: boolean;
+  updated_at?: string;
+  user_id?: string;
   locked?: boolean | null;
   locked_by?: string | null;
   locked_by_user?: {
@@ -37,10 +27,20 @@ export type FlowType = {
     username: string;
   } | null;
   lock_updated_at?: string | null;
+  endpoint_name?: string | null;
+  last_tested_version?: string;
+  date_created?: string;
+  parent?: string;
+  folder?: string;
+  icon?: string;
+  gradient?: string;
+  tags?: string[];
+  icon_bg_color?: string;
+  webhook?: boolean;
   public?: boolean;
   access_type?: "PUBLIC" | "PRIVATE" | "PROTECTED";
   mcp_enabled?: boolean;
-};
+}
 
 export type GenericNodeType = Node<NodeDataType, "genericNode">;
 export type NoteNodeType = Node<NoteDataType, "noteNode">;

@@ -2,6 +2,7 @@ import useFlowsManagerStore from "@/stores/flowsManagerStore";
 import { FlowType } from "@/types/flow";
 import { useDebounce } from "../use-debounce";
 import useSaveFlow from "./use-save-flow";
+import useFlowStore from "@/stores/flowStore";
 
 const useAutoSaveFlow = () => {
   const saveFlow = useSaveFlow();
@@ -12,6 +13,11 @@ const useAutoSaveFlow = () => {
 
   const autoSaveFlow = useDebounce((flow?: FlowType) => {
     if (autoSaving) {
+      // Check if flow is locked
+      const currentFlow = useFlowStore.getState().currentFlow;
+      if (currentFlow?.locked) {
+        return;
+      }
       saveFlow(flow);
     }
   }, autoSavingInterval);
