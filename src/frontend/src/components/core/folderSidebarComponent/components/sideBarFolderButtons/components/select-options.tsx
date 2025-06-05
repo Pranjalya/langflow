@@ -45,6 +45,9 @@ export const SelectOptions = ({
       user.user_id === currentUserId && user.is_project_admin
     ));
 
+  // Check if user can delete (same conditions as edit details)
+  const canDelete = canEditDetails;
+
   return (
     <div>
       <Select
@@ -105,7 +108,7 @@ export const SelectOptions = ({
               <FolderSelectItem name="Edit Details" iconName="Users" />
             </SelectItem>
           )}
-          {index > 0 && (
+          {index > 0 && canDelete && (
             <SelectItem
               value="delete"
               data-testid="btn-delete-project"

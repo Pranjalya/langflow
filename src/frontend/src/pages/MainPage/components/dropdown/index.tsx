@@ -4,6 +4,9 @@ import useAlertStore from "@/stores/alertStore";
 import { FlowType } from "@/types/flow";
 import useDuplicateFlow from "../../hooks/use-handle-duplicate";
 import useSelectOptionsChange from "../../hooks/use-select-options-change";
+import useAuthStore from "@/stores/authStore";
+import { useGetProjectUsers } from "@/controllers/API/queries/projects/use-get-project-users";
+import { useParams } from "react-router-dom";
 
 type DropdownComponentProps = {
   flowData: FlowType;
@@ -21,6 +24,19 @@ const DropdownComponent = ({
   const setSuccessData = useAlertStore((state) => state.setSuccessData);
   const setErrorData = useAlertStore((state) => state.setErrorData);
   const { handleDuplicate } = useDuplicateFlow({ flow: flowData });
+  const { folderId } = useParams();
+  const userData = useAuthStore((state) => state.userData);
+  const currentUserId = userData?.id;
+  const userLevel = userData?.user_level;
+
+  // Get project users to check permissions if we're in a project folder
+  const { data: projectUsersData } = useGetProjectUsers(folderId || "");
+
+  // Check if user can delete (must be SUPER_ADMIN or PROJECT_ADMIN)
+  const canDelete = userLevel === "SUPER_ADMIN" || 
+    (folderId && projectUsersData?.users?.some(user => 
+      user.user_id === currentUserId && user.is_project_admin
+    ));
 
   const duplicateFlow = () => {
     handleDuplicate().then(() =>
@@ -86,21 +102,23 @@ const DropdownComponent = ({
         />
         Duplicate
       </DropdownMenuItem>
-      <DropdownMenuItem
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpenDelete(true);
-        }}
-        className="cursor-pointer text-destructive"
-        data-testid="btn_delete_dropdown_menu"
-      >
-        <ForwardedIconComponent
-          name="Trash2"
-          aria-hidden="true"
-          className="mr-2 h-4 w-4"
-        />
-        Delete
-      </DropdownMenuItem>
+      {canDelete && (
+        <DropdownMenuItem
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpenDelete(true);
+          }}
+          className="cursor-pointer text-destructive"
+          data-testid="btn_delete_dropdown_menu"
+        >
+          <ForwardedIconComponent
+            name="Trash2"
+            aria-hidden="true"
+            className="mr-2 h-4 w-4"
+          />
+          Delete
+        </DropdownMenuItem>
+      )}
     </>
   );
 };
