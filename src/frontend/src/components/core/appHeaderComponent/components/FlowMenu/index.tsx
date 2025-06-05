@@ -56,6 +56,10 @@ export const MenuBar = memo((): JSX.Element => {
   const onFlowPage = useFlowStore((state) => state.onFlowPage);
   const measureRef = useRef<HTMLSpanElement>(null);
   const changesNotSaved = useUnsavedChanges();
+  const currentFlow = useFlowStore((state) => state.currentFlow);
+  
+  // Check if user has edit permission
+  const canEdit = currentFlow?.permissions?.can_edit || currentFlow?.user_id === currentFlow?.current_user_id;
 
   const { data: folders, isFetched: isFoldersFetched } = useGetFoldersQuery();
 
@@ -74,9 +78,13 @@ export const MenuBar = memo((): JSX.Element => {
   );
 
   const handleSave = () => {
-    saveFlow().then(() => {
-      setSuccessData({ title: "Saved successfully" });
-    });
+    saveFlow()
+      .then(() => {
+        setSuccessData({ title: "Saved successfully" });
+      })
+      .catch((error) => {
+        // Error is already handled in saveFlow
+      });
   };
 
   const changes = useShortcutsStore((state) => state.changesSave);
@@ -154,7 +162,7 @@ export const MenuBar = memo((): JSX.Element => {
             </div>
           </PopoverTrigger>
           <div className={"ml-5 hidden shrink-0 items-center sm:flex"}>
-            {!autoSaving && (
+            {!autoSaving && canEdit && (
               <ShadTooltip
                 content={
                   changesNotSaved

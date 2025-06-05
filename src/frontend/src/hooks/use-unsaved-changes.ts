@@ -10,5 +10,9 @@ export function useUnsavedChanges() {
     return false;
   }
 
-  return customStringify(currentFlow) !== customStringify(savedFlow);
+  // Check if user has edit permission
+  const canEdit = currentFlow.permissions?.can_edit || currentFlow.user_id === currentFlow.current_user_id;
+  
+  // Only report unsaved changes if user has edit permission
+  return canEdit && customStringify(currentFlow) !== customStringify(savedFlow);
 }

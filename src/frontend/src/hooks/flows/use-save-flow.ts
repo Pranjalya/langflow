@@ -25,7 +25,17 @@ const useSaveFlow = () => {
         title: "Cannot save flow",
         list: ["This flow is locked and cannot be modified"],
       });
-      return;
+      return Promise.reject(new Error("Flow is locked"));
+    }
+
+    // Check if user has edit permission
+    const canEdit = currentFlow?.permissions?.can_edit || currentFlow?.user_id === currentFlow?.current_user_id;
+    if (!canEdit) {
+      setErrorData({
+        title: "Cannot save flow",
+        list: ["You don't have permission to edit this flow"],
+      });
+      return Promise.reject(new Error("No edit permission"));
     }
 
     if (

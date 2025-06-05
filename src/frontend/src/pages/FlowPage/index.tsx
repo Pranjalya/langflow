@@ -33,8 +33,14 @@ export default function FlowPage({ view }: { view?: boolean }): JSX.Element {
     customStringify(currentFlow) !== customStringify(currentSavedFlow) &&
     (currentFlow?.data?.nodes?.length ?? 0) > 0;
 
+  // Check if user has edit permission
+  const canEdit = currentFlow?.permissions?.can_edit || currentFlow?.user_id === currentFlow?.current_user_id;
+  
+  // Only show unsaved changes if user has edit permission
+  const showUnsavedChanges = canEdit && changesNotSaved;
+
   const isBuilding = useFlowStore((state) => state.isBuilding);
-  const blocker = useBlocker(changesNotSaved || isBuilding);
+  const blocker = useBlocker(showUnsavedChanges || isBuilding);
 
   const setOnFlowPage = useFlowStore((state) => state.setOnFlowPage);
   const { id } = useParams();
@@ -62,21 +68,27 @@ export default function FlowPage({ view }: { view?: boolean }): JSX.Element {
         });
       }
     }, 1200);
-    saveFlow().then(() => {
-      if (!autoSaving || saving === false) {
-        blocker.proceed && blocker.proceed();
-        setSuccessData({
-          title: "Flow saved successfully!",
-        });
-      }
-      proceed = true;
-    });
+    saveFlow()
+      .then(() => {
+        if (!autoSaving || saving === false) {
+          blocker.proceed && blocker.proceed();
+          setSuccessData({
+            title: "Flow saved successfully!",
+          });
+        }
+        proceed = true;
+      })
+      .catch((error) => {
+        // Don't show success message if there was an error
+        proceed = true;
+        if (blocker.proceed) blocker.proceed();
+      });
   };
 
   const handleExit = () => {
     if (isBuilding) {
       // Do nothing, let the blocker handle it
-    } else if (changesNotSaved) {
+    } else if (showUnsavedChanges) {
       if (blocker.proceed) blocker.proceed();
     } else {
       navigate("/all");
@@ -85,7 +97,7 @@ export default function FlowPage({ view }: { view?: boolean }): JSX.Element {
 
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (changesNotSaved || isBuilding) {
+      if (showUnsavedChanges || isBuilding) {
         event.preventDefault();
         event.returnValue = ""; // Required for Chrome
       }
@@ -96,7 +108,7 @@ export default function FlowPage({ view }: { view?: boolean }): JSX.Element {
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
-  }, [changesNotSaved, isBuilding]);
+  }, [showUnsavedChanges, isBuilding]);
 
   // Set flow tab id
   useEffect(() => {
@@ -122,7 +134,7 @@ export default function FlowPage({ view }: { view?: boolean }): JSX.Element {
     if (
       blocker.state === "blocked" &&
       autoSaving &&
-      changesNotSaved &&
+      showUnsavedChanges &&
       !isBuilding
     ) {
       handleSave();
@@ -133,7 +145,7 @@ export default function FlowPage({ view }: { view?: boolean }): JSX.Element {
     if (blocker.state === "blocked") {
       if (isBuilding) {
         stopBuilding();
-      } else if (!changesNotSaved) {
+      } else if (!showUnsavedChanges) {
         blocker.proceed && blocker.proceed();
       }
     }
@@ -186,7 +198,7 @@ export default function FlowPage({ view }: { view?: boolean }): JSX.Element {
       </div>
       {blocker.state === "blocked" && (
         <>
-          {!isBuilding && currentSavedFlow && (
+          {!isBuilding && currentSavedFlow && showUnsavedChanges && (
             <SaveChangesModal
               onSave={handleSave}
               onCancel={() => blocker.reset?.()}
