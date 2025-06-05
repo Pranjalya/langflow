@@ -602,6 +602,43 @@ async def update_project_user_permissions(
             if permissions.is_project_admin is not None:
                 permission.permission_level = PermissionLevel.PROJECT_ADMIN if permissions.is_project_admin else PermissionLevel.USER
 
+        # If user is being made a PROJECT_ADMIN, update all flow permissions
+        if permissions.is_project_admin:
+            # Get all flows in the project
+            flows = await session.exec(
+                select(Flow).where(Flow.folder_id == project_id)
+            )
+            
+            # Update or create permissions for each flow
+            for flow in flows:
+                flow_permission = (await session.exec(
+                    select(ResourcePermission).where(
+                        ResourcePermission.resource_id == flow.id,
+                        ResourcePermission.grantee_id == user_id,
+                        ResourcePermission.resource_type == 'flow'
+                    )
+                )).first()
+
+                if not flow_permission:
+                    # Create new flow permission
+                    flow_permission = ResourcePermission(
+                        resource_id=flow.id,
+                        grantor_id=current_user.id,
+                        grantee_id=user_id,
+                        resource_type='flow',
+                        permission_level=PermissionLevel.PROJECT_ADMIN,
+                        can_read=True,
+                        can_run=True,
+                        can_edit=True
+                    )
+                    session.add(flow_permission)
+                else:
+                    # Update existing flow permission
+                    flow_permission.permission_level = PermissionLevel.PROJECT_ADMIN
+                    flow_permission.can_read = True
+                    flow_permission.can_run = True
+                    flow_permission.can_edit = True
+
         await session.commit()
         await session.refresh(permission)
 

@@ -442,3 +442,22 @@ class FlowPermissionResponse(BaseModel):
     can_read: bool
     can_edit: bool
     can_run: bool
+
+
+class FlowUserPermission(BaseModel):
+    user_id: UUID
+    username: str | None = None
+    can_read: bool
+    can_run: bool
+    can_edit: bool
+
+
+class FlowUserPermissionUpdate(BaseModel):
+    can_read: bool | None = None
+    can_run: bool | None = None
+    can_edit: bool | None = None
+
+
+class FlowUserPermissionsResponse(BaseModel):
+    users: list[FlowUserPermission]
+    total_count: int

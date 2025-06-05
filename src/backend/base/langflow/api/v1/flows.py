@@ -36,7 +36,7 @@ from langflow.services.settings.service import SettingsService
 from langflow.utils.compression import compress_response
 from langflow.services.database.models.resource_permission import ResourcePermission, ResourceType, PermissionLevel
 from langflow.services.database.models.user.model import UserLevel
-from langflow.api.v1.schemas import FlowPermissionResponse
+from langflow.api.v1.schemas import FlowPermissionResponse, FlowUserPermissionsResponse, FlowUserPermission, FlowUserPermissionUpdate
 from langflow.services.database.resource_permission import get_resource_permission
 from langflow.services.database.models.user.model import User
 from langflow.services.auth.utils import get_current_active_user, get_session
@@ -862,4 +862,148 @@ async def get_flow_permissions(
         can_read=permission.can_read,
         can_edit=permission.can_edit,
         can_run=permission.can_run,
+    )
+
+
+@router.get(
+    "/{flow_id}/users",
+    response_model=FlowUserPermissionsResponse,
+    dependencies=[Depends(get_current_active_user)],
+)
+async def get_flow_users(
+    flow_id: UUID,
+    current_user: User = Depends(get_current_active_user),
+    session: AsyncSession = Depends(get_session),
+) -> FlowUserPermissionsResponse:
+    """Get all users associated with a flow and their permissions."""
+    # Check if user has access to the flow
+    flow_permission = await get_resource_permission(
+        session=session,
+        resource_id=flow_id,
+        resource_type=ResourceType.FLOW,
+        grantee_id=current_user.id,
+    )
+
+    if not flow_permission:
+        raise HTTPException(
+            status_code=404,
+            detail="Flow not found or you don't have access to it",
+        )
+
+    # Check if user is SUPER_ADMIN or has PROJECT_ADMIN permission
+    if current_user.user_level != UserLevel.SUPER_ADMIN:
+        project_permission = await get_resource_permission(
+            session=session,
+            resource_id=flow_permission.resource_id,
+            resource_type=ResourceType.FLOW,
+            grantee_id=current_user.id,
+        )
+        logger.info(f"Permission: {project_permission}")
+        if not project_permission or project_permission.permission_level != PermissionLevel.PROJECT_ADMIN:
+            raise HTTPException(
+                status_code=403,
+                detail="Only SUPER_ADMIN users or PROJECT_ADMIN users can view flow permissions",
+            )
+
+    # Get all users who have permissions for this flow
+    flow_permissions = await session.exec(
+        select(ResourcePermission)
+        .where(
+            ResourcePermission.resource_id == flow_id,
+            ResourcePermission.resource_type == ResourceType.FLOW,
+        )
+        .options(selectinload(ResourcePermission.grantee))
+    )
+    
+    users = []
+    for permission in flow_permissions:
+        users.append(
+            FlowUserPermission(
+                user_id=permission.grantee_id,
+                username=permission.grantee.username if permission.grantee else None,
+                can_read=permission.can_read,
+                can_run=permission.can_run,
+                can_edit=permission.can_edit,
+            )
+        )
+
+    return FlowUserPermissionsResponse(users=users, total_count=len(users))
+
+
+@router.patch(
+    "/{flow_id}/users/{user_id}",
+    response_model=FlowUserPermission,
+    dependencies=[Depends(get_current_active_user)],
+)
+async def update_flow_user_permissions(
+    flow_id: UUID,
+    user_id: UUID,
+    permissions: FlowUserPermissionUpdate,
+    current_user: User = Depends(get_current_active_user),
+    session: AsyncSession = Depends(get_session),
+) -> FlowUserPermission:
+    """Update a user's permissions for a flow."""
+    # Check if user has access to the flow
+    flow_permission = await get_resource_permission(
+        session=session,
+        resource_id=flow_id,
+        resource_type=ResourceType.FLOW,
+        grantee_id=current_user.id,
+    )
+
+    if not flow_permission:
+        raise HTTPException(
+            status_code=404,
+            detail="Flow not found or you don't have access to it",
+        )
+
+    # Check if user is SUPER_ADMIN or has PROJECT_ADMIN permission
+    if current_user.user_level != UserLevel.SUPER_ADMIN:
+        project_permission = await get_resource_permission(
+            session=session,
+            resource_id=flow_permission.resource_id,
+            resource_type=ResourceType.PROJECT,
+            grantee_id=current_user.id,
+        )
+        if not project_permission or project_permission.permission_level != PermissionLevel.PROJECT_ADMIN:
+            raise HTTPException(
+                status_code=403,
+                detail="Only SUPER_ADMIN users or PROJECT_ADMIN users can update flow permissions",
+            )
+
+    # Get the user's current permissions
+    user_permission = (await session.exec(
+        select(ResourcePermission)
+        .where(
+            ResourcePermission.resource_id == flow_id,
+            ResourcePermission.resource_type == ResourceType.FLOW,
+            ResourcePermission.grantee_id == user_id,
+        )
+        .options(selectinload(ResourcePermission.grantee))
+    )).first()
+
+    if not user_permission:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found or doesn't have permissions for this flow",
+        )
+
+    # Update permissions
+    if permissions.can_read is not None:
+        user_permission.can_read = permissions.can_read
+    if permissions.can_run is not None:
+        user_permission.can_run = permissions.can_run
+    if permissions.can_edit is not None:
+        user_permission.can_edit = permissions.can_edit
+
+    session.add(user_permission)
+    await session.commit()
+    await session.refresh(user_permission)
+
+    return FlowUserPermission(
+        user_id=user_permission.grantee_id,
+        username=user_permission.grantee.username if user_permission.grantee else None,
+        can_read=user_permission.can_read,
+        can_run=user_permission.can_run,
+        can_edit=user_permission.can_edit,
     )

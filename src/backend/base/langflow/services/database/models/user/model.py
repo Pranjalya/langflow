@@ -72,6 +72,15 @@ class User(SQLModel, table=True):  # type: ignore[call-arg]
         back_populates="locked_by_user",
         sa_relationship_kwargs={"foreign_keys": "[Flow.locked_by]"}
     )
+    # Add resource permission relationships
+    resource_permissions: list["ResourcePermission"] = Relationship(
+        back_populates="grantee",
+        sa_relationship_kwargs={"foreign_keys": "[ResourcePermission.grantee_id]"}
+    )
+    granted_permissions: list["ResourcePermission"] = Relationship(
+        back_populates="grantor",
+        sa_relationship_kwargs={"foreign_keys": "[ResourcePermission.grantor_id]"}
+    )
     # shared_folders: list["Folder"] = Relationship(
     #     back_populates="users",
     #     link_model=folder_user_link,

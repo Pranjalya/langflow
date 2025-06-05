@@ -128,7 +128,7 @@ export const SelectOptions = ({
           projectName={item.name}
           onSuccess={() => {
             // Refresh the project list or update the current project data
-            window.location.reload();
+            // window.location.reload();
           }}
         />
       )}

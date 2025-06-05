@@ -7,6 +7,8 @@ import useSelectOptionsChange from "../../hooks/use-select-options-change";
 import useAuthStore from "@/stores/authStore";
 import { useGetProjectUsers } from "@/controllers/API/queries/projects/use-get-project-users";
 import { useParams } from "react-router-dom";
+import { useState, useEffect } from "react";
+import FlowUsersModal from "@/modals/flowUsersModal";
 
 type DropdownComponentProps = {
   flowData: FlowType;
@@ -28,6 +30,7 @@ const DropdownComponent = ({
   const userData = useAuthStore((state) => state.userData);
   const currentUserId = userData?.id;
   const userLevel = userData?.user_level;
+  const [openUsersModal, setOpenUsersModal] = useState(false);
 
   // Get project users to check permissions if we're in a project folder
   const { data: projectUsersData } = useGetProjectUsers(folderId || "");
@@ -37,6 +40,20 @@ const DropdownComponent = ({
     (folderId && projectUsersData?.users?.some(user => 
       user.user_id === currentUserId && user.is_project_admin
     ));
+
+  // Check if user can manage users (same as delete permission)
+  const canManageUsers = canDelete;
+
+  useEffect(() => {
+    console.log("Dropdown Component State:", {
+      openUsersModal,
+      canManageUsers,
+      userLevel,
+      currentUserId,
+      projectUsersData,
+      flowData
+    });
+  }, [openUsersModal, canManageUsers, userLevel, currentUserId, projectUsersData, flowData]);
 
   const duplicateFlow = () => {
     handleDuplicate().then(() =>
@@ -55,6 +72,12 @@ const DropdownComponent = ({
     handleEdit,
   );
 
+  const handleEditUsers = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    console.log("Edit Users clicked, setting modal to open");
+    setOpenUsersModal(true);
+  };
+
   return (
     <>
       <DropdownMenuItem
@@ -72,6 +95,20 @@ const DropdownComponent = ({
         />
         Edit details
       </DropdownMenuItem>
+      {canManageUsers && (
+        <DropdownMenuItem
+          onClick={handleEditUsers}
+          className="cursor-pointer"
+          data-testid="btn-edit-users"
+        >
+          <ForwardedIconComponent
+            name="Users"
+            aria-hidden="true"
+            className="mr-2 h-4 w-4"
+          />
+          Edit users
+        </DropdownMenuItem>
+      )}
       <DropdownMenuItem
         onClick={(e) => {
           e.stopPropagation();
@@ -119,6 +156,11 @@ const DropdownComponent = ({
           Delete
         </DropdownMenuItem>
       )}
+      <FlowUsersModal
+        open={openUsersModal}
+        setOpen={setOpenUsersModal}
+        flowData={flowData}
+      />
     </>
   );
 };

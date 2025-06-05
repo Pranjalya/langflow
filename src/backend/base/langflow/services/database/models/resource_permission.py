@@ -25,4 +25,14 @@ class ResourcePermissionBase(SQLModel):
 
 class ResourcePermission(ResourcePermissionBase, table=True):
     __tablename__ = "resource_permission"
-    id: UUID = Field(default_factory=uuid4, primary_key=True) 
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    
+    # Add relationships
+    grantee: "User" = Relationship(
+        back_populates="resource_permissions",
+        sa_relationship_kwargs={"foreign_keys": "[ResourcePermission.grantee_id]"}
+    )
+    grantor: "User" = Relationship(
+        back_populates="granted_permissions",
+        sa_relationship_kwargs={"foreign_keys": "[ResourcePermission.grantor_id]"}
+    ) 
