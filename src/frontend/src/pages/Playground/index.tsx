@@ -6,16 +6,18 @@ import { track } from "@/customization/utils/analytics";
 import useFlowStore from "@/stores/flowStore";
 import { useUtilityStore } from "@/stores/utilityStore";
 import { CookieOptions, getCookie, setCookie } from "@/utils/utils";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { v4 as uuid } from "uuid";
 import useFlowsManagerStore from "../../stores/flowsManagerStore";
 import { getInputsAndOutputs } from "../../utils/storeUtils";
+
 export default function PlaygroundPage() {
   useGetConfig();
   const setCurrentFlow = useFlowsManagerStore((state) => state.setCurrentFlow);
   const currentSavedFlow = useFlowsManagerStore((state) => state.currentFlow);
   const setClientId = useUtilityStore((state) => state.setClientId);
+  const [hasRunPermission, setHasRunPermission] = useState(false);
 
   const { id } = useParams();
   const { mutateAsync: getFlow } = useGetFlow();
@@ -32,7 +34,13 @@ export default function PlaygroundPage() {
       return flow;
     } catch (error: any) {
       console.log(error);
+      if (error.response?.status === 403) {
+        // Handle 403 error - user doesn't have permission
+        navigate("/");
+        return null;
+      }
       navigate("/");
+      return null;
     }
   }
 
@@ -43,6 +51,14 @@ export default function PlaygroundPage() {
         const flow = await getFlowData();
         if (flow) {
           setCurrentFlow(flow);
+          // Check if user has run permission
+          const hasPermission = flow.permissions?.can_run || flow.user_id === flow.current_user_id;
+          setHasRunPermission(hasPermission);
+          
+          if (!hasPermission) {
+            // If no run permission, redirect to home
+            navigate("/");
+          }
         } else {
           navigate("/");
         }
@@ -66,13 +82,14 @@ export default function PlaygroundPage() {
       );
       if (
         (inputs.length === 0 && outputs.length === 0) ||
-        currentSavedFlow?.access_type !== "PUBLIC"
+        currentSavedFlow?.access_type !== "PUBLIC" ||
+        !hasRunPermission
       ) {
         // redirect to the home page
         navigate("/");
       }
     }
-  }, [currentSavedFlow]);
+  }, [currentSavedFlow, hasRunPermission]);
 
   useEffect(() => {
     // Get client ID from cookie or create new one
@@ -89,6 +106,10 @@ export default function PlaygroundPage() {
       setClientId(clientId);
     }
   }, []);
+
+  if (!hasRunPermission) {
+    return null; // Don't render anything if no permission
+  }
 
   return (
     <div className="flex h-full w-full flex-col items-center justify-center align-middle">

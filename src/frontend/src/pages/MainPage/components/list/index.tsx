@@ -24,6 +24,7 @@ import useDescriptionModal from "../../hooks/use-description-modal";
 import { useGetTemplateStyle } from "../../utils/get-template-style";
 import { timeElapsed } from "../../utils/time-elapse";
 import DropdownComponent from "../dropdown";
+import { useGetFlow } from "@/controllers/API/queries/flows/use-get-flow";
 
 const ListComponent = ({
   flowData,
@@ -45,6 +46,7 @@ const ListComponent = ({
   const [openSettings, setOpenSettings] = useState(false);
   const [openExportModal, setOpenExportModal] = useState(false);
   const isComponent = flowData.is_component ?? false;
+  const { mutateAsync: getFlow } = useGetFlow();
 
   const { getIcon } = useGetTemplateStyle(flowData);
 
@@ -55,7 +57,32 @@ const ListComponent = ({
       setSelected(!selected);
     } else {
       if (!isComponent) {
-        navigate(editFlowLink);
+        try {
+          // Check permissions before navigating
+          const flow = await getFlow({ id: flowData.id });
+          const hasPermission = flow.permissions?.can_read || flow.user_id === flow.current_user_id;
+          console.log(flow.permissions, flow.user_id, flow.current_user_id);
+          if (hasPermission) {
+            navigate(editFlowLink);
+          } else {
+            setErrorData({
+              title: "Access Denied",
+              list: ["You don't have permission to view this flow"],
+            });
+          }
+        } catch (error: any) {
+          if (error.response?.status === 403) {
+            setErrorData({
+              title: "Access Denied",
+              list: ["You don't have permission to view this flow"],
+            });
+          } else {
+            setErrorData({
+              title: "Error",
+              list: ["Failed to load flow. Please try again."],
+            });
+          }
+        }
       }
     }
   };

@@ -17,6 +17,7 @@ import { FlowSidebarComponent } from "./components/flowSidebarComponent";
 
 export default function FlowPage({ view }: { view?: boolean }): JSX.Element {
   const types = useTypesStore((state) => state.types);
+  const [hasReadPermission, setHasReadPermission] = useState(false);
 
   useGetTypes({
     enabled: Object.keys(types).length <= 0,
@@ -139,11 +140,33 @@ export default function FlowPage({ view }: { view?: boolean }): JSX.Element {
   }, [blocker.state, isBuilding]);
 
   const getFlowToAddToCanvas = async (id: string) => {
-    const flow = await getFlow({ id: id });
-    setCurrentFlow(flow);
+    try {
+      const flow = await getFlow({ id: id });
+      setCurrentFlow(flow);
+      
+      // Check if user has read permission
+      const hasPermission = flow.permissions?.can_read || flow.user_id === flow.current_user_id;
+      setHasReadPermission(hasPermission);
+      
+      if (!hasPermission) {
+        // If no read permission, redirect to home
+        navigate("/");
+      }
+    } catch (error: any) {
+      if (error.response?.status === 403) {
+        // Handle 403 error - user doesn't have permission
+        navigate("/");
+      }
+      console.error("Error loading flow:", error);
+      navigate("/");
+    }
   };
 
   const isMobile = useIsMobile();
+
+  if (!hasReadPermission) {
+    return <div />; // Return empty div instead of null
+  }
 
   return (
     <>

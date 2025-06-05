@@ -26,6 +26,7 @@ from langflow.services.database.models.flow import FlowCreate, FlowRead
 from langflow.services.database.models.user import UserRead
 from langflow.services.settings.feature_flags import FeatureFlags
 from langflow.services.tracing.schema import Log
+from langflow.services.database.models.resource_permission import PermissionLevel
 
 
 class BuildStatus(Enum):
@@ -427,3 +428,17 @@ class ProjectUserPermissionUpdate(BaseModel):
 class ProjectUserPermissionsResponse(BaseModel):
     users: list[ProjectUserPermission]
     total_count: int
+
+
+class ProjectPermissionResponse(BaseModel):
+    permission_level: PermissionLevel
+    can_read: bool
+    can_edit: bool
+    can_run: bool
+
+
+class FlowPermissionResponse(BaseModel):
+    permission_level: PermissionLevel
+    can_read: bool
+    can_edit: bool
+    can_run: bool

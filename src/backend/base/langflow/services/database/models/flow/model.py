@@ -238,6 +238,8 @@ class FlowRead(FlowBase):
     locked_by: UUID | None = Field(None, description="ID of the user who locked the flow")
     lock_updated_at: datetime | None = Field(None, description="When the flow was locked")
     locked_by_user: Optional[dict] = Field(None, description="User who locked the flow")
+    permissions: Optional[dict] = Field(None, description="User permissions for this flow")
+    current_user_id: Optional[UUID] = Field(None, description="ID of the current user")
 
     @field_serializer("locked_by_user")
     def serialize_locked_by_user(self, value):

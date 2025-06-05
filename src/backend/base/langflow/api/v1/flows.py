@@ -34,8 +34,13 @@ from langflow.services.database.models.folder.model import Folder
 from langflow.services.deps import get_settings_service
 from langflow.services.settings.service import SettingsService
 from langflow.utils.compression import compress_response
-from langflow.services.database.models.resource_permission import ResourcePermission, ResourceType
+from langflow.services.database.models.resource_permission import ResourcePermission, ResourceType, PermissionLevel
 from langflow.services.database.models.user.model import UserLevel
+from langflow.api.v1.schemas import FlowPermissionResponse
+from langflow.services.database.resource_permission import get_resource_permission
+from langflow.services.database.models.user.model import User
+from langflow.services.auth.utils import get_current_active_user, get_session
+
 
 # build router
 router = APIRouter(prefix="/flows", tags=["Flows"])
@@ -357,7 +362,35 @@ async def read_flow(
         if db_flow.user_id != current_user.id and not permission:
             raise HTTPException(status_code=403, detail="You don't have permission to read this flow")
 
-        return db_flow
+        # Get the permission for the current user
+        user_permission = await get_resource_permission(
+            session,
+            resource_id=flow_id,
+            grantee_id=current_user.id,
+            resource_type=ResourceType.FLOW,
+        )
+
+        # Convert flow to FlowRead model
+        flow_read = FlowRead.model_validate(db_flow, from_attributes=True)
+        
+        # Add permissions and current user ID to the response
+        if user_permission:
+            flow_read.permissions = {
+                "can_read": user_permission.can_read,
+                "can_edit": user_permission.can_edit,
+                "can_run": user_permission.can_run
+            }
+        else:
+            # If no explicit permission is set, user is the owner
+            flow_read.permissions = {
+                "can_read": True,
+                "can_edit": True,
+                "can_run": True
+            }
+        
+        flow_read.current_user_id = current_user.id
+
+        return flow_read
 
     except Exception as e:
         if isinstance(e, HTTPException):
@@ -774,3 +807,59 @@ async def release_lock(
         if isinstance(e, HTTPException):
             raise
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get(
+    "/{flow_id}/permissions",
+    response_model=FlowPermissionResponse,
+    dependencies=[Depends(get_current_active_user)],
+)
+async def get_flow_permissions(
+    flow_id: UUID,
+    current_user: User = Depends(get_current_active_user),
+    session: AsyncSession = Depends(get_session),
+) -> FlowPermissionResponse:
+    """Get the permissions for a flow for the current user."""
+    # Get the flow
+    flow = (
+        await session.exec(
+            select(Flow).options(selectinload(Flow.locked_by_user)).where(
+                Flow.id == flow_id,
+                or_(
+                    Flow.user_id == current_user.id,
+                    and_(
+                        ResourcePermission.resource_id == Flow.id,
+                        ResourcePermission.grantee_id == current_user.id,
+                        ResourcePermission.resource_type == 'flow'
+                    )
+                )
+            )
+        )
+    ).first()
+
+    if not flow:
+        raise HTTPException(status_code=404, detail="Flow not found")
+
+    # Get the permission for the current user
+    permission = await get_resource_permission(
+        session,
+        resource_id=flow_id,
+        grantee_id=current_user.id,
+        resource_type=ResourceType.FLOW,
+    )
+
+    if not permission:
+        # If no explicit permission is set, return default permissions
+        return FlowPermissionResponse(
+            permission_level=PermissionLevel.USER,
+            can_read=False,
+            can_edit=False,
+            can_run=False,
+        )
+
+    return FlowPermissionResponse(
+        permission_level=permission.permission_level,
+        can_read=permission.can_read,
+        can_edit=permission.can_edit,
+        can_run=permission.can_run,
+    )

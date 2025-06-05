@@ -161,6 +161,18 @@ export const EditProjectDialog = ({
     e.preventDefault();
     setTouched(true);
 
+    // Validate that at least one permission is set for each user
+    const invalidUsers = userPermissions.filter(
+      p => !p.can_read && !p.can_run && !p.can_edit
+    );
+
+    if (invalidUsers.length > 0) {
+      // Show error message for users with no permissions
+      const usernames = invalidUsers.map(p => p.username || p.user_id).join(', ');
+      alert(`Please set at least one permission for users: ${usernames}`);
+      return;
+    }
+
     updateProjectUsers(
       {
         projectId,
@@ -176,6 +188,10 @@ export const EditProjectDialog = ({
         onSuccess: () => {
           onSuccess?.();
           handleClose();
+        },
+        onError: (error) => {
+          console.error('Error updating project permissions:', error);
+          alert('Failed to update project permissions. Please try again.');
         }
       }
     );

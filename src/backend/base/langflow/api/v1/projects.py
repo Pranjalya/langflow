@@ -14,6 +14,7 @@ from fastapi_pagination.ext.sqlmodel import apaginate
 from sqlalchemy import or_, update, and_
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from langflow.api.utils import CurrentActiveUser, DbSession, cascade_delete_flow, custom_params, remove_api_keys
 from langflow.api.v1.flows import create_flows
@@ -33,8 +34,10 @@ from langflow.services.database.models.folder.model import (
 )
 from langflow.services.database.models.folder.pagination_model import FolderWithPaginatedFlows
 from langflow.services.database.models.user.model import User
-from langflow.services.database.models.resource_permission import ResourcePermission, PermissionLevel
-from langflow.api.v1.schemas import ProjectUserPermissionsResponse, ProjectUserPermission, ProjectUserPermissionUpdate
+from langflow.services.database.models.resource_permission import ResourcePermission, PermissionLevel, ResourceType
+from langflow.api.v1.schemas import ProjectUserPermissionsResponse, ProjectUserPermission, ProjectUserPermissionUpdate, ProjectPermissionResponse
+from langflow.services.database.resource_permission import get_resource_permission
+from langflow.services.auth.utils import get_current_active_user, get_session
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
@@ -667,3 +670,59 @@ async def remove_project_user(
         if isinstance(e, HTTPException):
             raise
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get(
+    "/{project_id}/permissions",
+    response_model=ProjectPermissionResponse,
+    dependencies=[Depends(get_current_active_user)],
+)
+async def get_project_permissions(
+    project_id: UUID,
+    current_user: User = Depends(get_current_active_user),
+    session: AsyncSession = Depends(get_session),
+) -> ProjectPermissionResponse:
+    """Get the permissions for a project for the current user."""
+    # Get the project
+    project = (
+        await session.exec(
+            select(Folder).where(
+                Folder.id == project_id,
+                or_(
+                    Folder.user_id == current_user.id,
+                    and_(
+                        ResourcePermission.resource_id == Folder.id,
+                        ResourcePermission.grantee_id == current_user.id,
+                        ResourcePermission.resource_type == 'project'
+                    )
+                )
+            )
+        )
+    ).first()
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Get the permission for the current user
+    permission = await get_resource_permission(
+        session,
+        resource_id=project_id,
+        grantee_id=current_user.id,
+        resource_type=ResourceType.PROJECT,
+    )
+
+    if not permission:
+        # If no explicit permission is set, return default permissions
+        return ProjectPermissionResponse(
+            permission_level=PermissionLevel.USER,
+            can_read=False,
+            can_edit=False,
+            can_run=False,
+        )
+
+    return ProjectPermissionResponse(
+        permission_level=permission.permission_level,
+        can_read=permission.can_read,
+        can_edit=permission.can_edit,
+        can_run=permission.can_run,
+    )

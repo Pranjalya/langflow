@@ -40,6 +40,12 @@ export interface FlowType {
   public?: boolean;
   access_type?: "PUBLIC" | "PRIVATE" | "PROTECTED";
   mcp_enabled?: boolean;
+  permissions?: {
+    can_read: boolean;
+    can_run: boolean;
+    can_edit: boolean;
+  };
+  current_user_id?: string;
 }
 
 export type GenericNodeType = Node<NodeDataType, "genericNode">;
