@@ -19,6 +19,7 @@ import { shallow } from "zustand/shallow";
 import FlowLockModal from "@/modals/flowLockModal";
 import { acquireLock, releaseLock } from "@/controllers/API/flows";
 import useAlertStore from "@/stores/alertStore";
+import useAuthStore from "@/stores/authStore";
 
 type CustomControlButtonProps = {
   iconName: string;
@@ -85,14 +86,29 @@ const CanvasControls = ({ children }) => {
   const [showLockModal, setShowLockModal] = useState(false);
   const currentFlow = useFlowStore((state) => state.currentFlow);
   const setErrorData = useAlertStore((state) => state.setErrorData);
+  const userData = useAuthStore((state) => state.userData);
+  const currentUserId = userData?.id;
+
+  // Check if the current user is the one who locked the flow
+  const isLockedByCurrentUser = currentFlow?.locked_by === currentUserId;
 
   useEffect(() => {
-    store.setState({
-      nodesDraggable: !isLocked,
-      nodesConnectable: !isLocked,
-      elementsSelectable: !isLocked,
+    // Only disable interactions if the flow is locked AND not locked by current user
+    const shouldDisableInteractions = isLocked && !isLockedByCurrentUser;
+    console.log('Flow lock status:', {
+      isLocked,
+      isLockedByCurrentUser,
+      shouldDisableInteractions,
+      currentUserId,
+      lockedBy: currentFlow?.locked_by
     });
-  }, [isLocked]);
+    
+    store.setState({
+      nodesDraggable: !shouldDisableInteractions,
+      nodesConnectable: !shouldDisableInteractions,
+      elementsSelectable: !shouldDisableInteractions,
+    });
+  }, [isLocked, isLockedByCurrentUser, currentFlow?.locked_by, currentUserId]);
 
   const handleLockClick = useCallback(async () => {
     if (!currentFlow) return;
@@ -102,12 +118,19 @@ const CanvasControls = ({ children }) => {
         setShowLockModal(true);
       } else {
         const updatedFlow = await acquireLock(currentFlow.id);
+        // Update both the current flow and the flows list
         setCurrentFlow(updatedFlow);
-        store.setState({
-          nodesDraggable: false,
-          nodesConnectable: false,
-          elementsSelectable: false,
-        });
+        const flows = useFlowsManagerStore.getState().flows;
+        if (flows) {
+          useFlowsManagerStore.getState().setFlows(
+            flows.map((flow) => {
+              if (flow.id === updatedFlow.id) {
+                return updatedFlow;
+              }
+              return flow;
+            })
+          );
+        }
       }
     } catch (error) {
       setErrorData({
@@ -115,19 +138,26 @@ const CanvasControls = ({ children }) => {
         list: [error instanceof Error ? error.message : "Failed to update lock status"],
       });
     }
-  }, [isLocked, currentFlow, setCurrentFlow, store, setErrorData]);
+  }, [isLocked, currentFlow, setCurrentFlow, setErrorData]);
 
   const handleUnlock = useCallback(async () => {
     if (!currentFlow) return;
 
     try {
       const updatedFlow = await releaseLock(currentFlow.id);
+      // Update both the current flow and the flows list
       setCurrentFlow(updatedFlow);
-      store.setState({
-        nodesDraggable: true,
-        nodesConnectable: true,
-        elementsSelectable: true,
-      });
+      const flows = useFlowsManagerStore.getState().flows;
+      if (flows) {
+        useFlowsManagerStore.getState().setFlows(
+          flows.map((flow) => {
+            if (flow.id === updatedFlow.id) {
+              return updatedFlow;
+            }
+            return flow;
+          })
+        );
+      }
       setShowLockModal(false);
     } catch (error) {
       setErrorData({
@@ -135,7 +165,13 @@ const CanvasControls = ({ children }) => {
         list: [error instanceof Error ? error.message : "Failed to update lock status"],
       });
     }
-  }, [currentFlow, setCurrentFlow, store, setErrorData]);
+  }, [currentFlow, setCurrentFlow, setErrorData]);
+
+  // Determine the lock icon color based on who locked it
+  const getLockIconColor = () => {
+    if (!isLocked) return "";
+    return isLockedByCurrentUser ? "bg-green-500" : "bg-destructive";
+  };
 
   return (
     <>
@@ -170,12 +206,12 @@ const CanvasControls = ({ children }) => {
         {children}
         {/* Lock/Unlock */}
         <CustomControlButton
-          iconName={isInteractive ? "LockOpen" : "Lock"}
-          tooltipText={isInteractive ? "Lock" : "Unlock"}
+          iconName={isLocked ? "Lock" : "LockOpen"}
+          tooltipText={isLocked ? (isLockedByCurrentUser ? "Unlock (You locked this)" : "Unlock") : "Lock"}
           onClick={handleLockClick}
-          backgroundClasses={isInteractive ? "" : "bg-destructive"}
+          backgroundClasses={isLocked ? getLockIconColor() : ""}
           iconClasses={
-            isInteractive ? "" : "text-primary-foreground dark:text-primary"
+            isLocked ? "text-primary-foreground dark:text-primary" : ""
           }
           testId="lock_unlock"
         />

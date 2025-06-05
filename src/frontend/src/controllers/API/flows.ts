@@ -31,4 +31,20 @@ export const releaseLock = async (flowId: string): Promise<FlowType> => {
   }
 
   return response.json();
+};
+
+export const getFlowPermissions = async (flowId: string) => {
+  const response = await fetch(`${BASE_URL_API}flows/${flowId}/permissions`, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch flow permissions");
+  }
+
+  return response.json();
 }; 
