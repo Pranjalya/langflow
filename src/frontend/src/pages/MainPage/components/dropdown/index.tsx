@@ -33,7 +33,7 @@ const DropdownComponent = ({
   const [openUsersModal, setOpenUsersModal] = useState(false);
 
   // Get project users to check permissions if we're in a project folder
-  const { data: projectUsersData } = useGetProjectUsers(folderId || "");
+  const { data: projectUsersData, isLoading: isLoadingProjectUsers } = useGetProjectUsers(folderId || "");
 
   // Check if user can delete (must be SUPER_ADMIN or PROJECT_ADMIN)
   const canDelete = userLevel === "SUPER_ADMIN" || 
@@ -51,9 +51,10 @@ const DropdownComponent = ({
       userLevel,
       currentUserId,
       projectUsersData,
-      flowData
+      flowData,
+      isLoadingProjectUsers
     });
-  }, [openUsersModal, canManageUsers, userLevel, currentUserId, projectUsersData, flowData]);
+  }, [openUsersModal, canManageUsers, userLevel, currentUserId, projectUsersData, flowData, isLoadingProjectUsers]);
 
   const duplicateFlow = () => {
     handleDuplicate().then(() =>

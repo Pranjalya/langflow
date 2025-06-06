@@ -63,6 +63,13 @@ export const EditProjectDialog = ({
   // Get all users
   const { data: allUsersData, isLoading: isLoadingAllUsers } = useGetUsers();
 
+  // Add debugging logs
+  useEffect(() => {
+    // console.log('Loading states:', { isLoadingProjectUsers, isLoadingAllUsers });
+    // console.log('Project users data:', projectUsersData);
+    // console.log('All users data:', allUsersData);
+  }, [isLoadingProjectUsers, isLoadingAllUsers, projectUsersData, allUsersData]);
+
   // Update project users mutation
   const { mutate: updateProjectUsers, isPending: isUpdating } = useUpdateProjectUsers();
 
@@ -202,8 +209,10 @@ export const EditProjectDialog = ({
     user => !userPermissions.some(p => p.user_id === user.id)
   ) || [];
 
+  console.log('Available users:', availableUsers);
+
   if (isLoadingProjectUsers || isLoadingAllUsers) {
-    return null;
+    return <div>Loading...</div>; // Changed from null to show loading state
   }
 
   return (
@@ -218,16 +227,28 @@ export const EditProjectDialog = ({
             <div className="flex flex-col gap-2">
               <label className="font-medium text-sm">Add User</label>
               <div className="flex items-center gap-2">
-                <Select value={selectedUserId} onValueChange={setSelectedUserId}>
-                  <SelectTrigger className="flex-1">
+                <Select 
+                  value={selectedUserId} 
+                  onValueChange={(value) => {
+                    console.log('Select value changed:', value);
+                    setSelectedUserId(value);
+                  }}
+                >
+                  <SelectTrigger className="flex-1" data-testid="user-select-trigger">
                     <SelectValue placeholder="Select a user" />
                   </SelectTrigger>
-                  <SelectContent>
-                    {availableUsers.map(user => (
-                      <SelectItem key={user.id} value={user.id}>
-                        {user.username}
+                  <SelectContent className="z-[100]">
+                    {availableUsers.length === 0 ? (
+                      <SelectItem value="no-users" disabled>
+                        No users available
                       </SelectItem>
-                    ))}
+                    ) : (
+                      availableUsers.map(user => (
+                        <SelectItem key={user.id} value={user.id}>
+                          {user.username}
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
                 <div className="flex items-center gap-2">
