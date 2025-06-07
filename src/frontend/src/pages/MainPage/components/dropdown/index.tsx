@@ -7,6 +7,7 @@ import useSelectOptionsChange from "../../hooks/use-select-options-change";
 import useAuthStore from "@/stores/authStore";
 import { useGetProjectUsers } from "@/controllers/API/queries/projects/use-get-project-users";
 import { useParams } from "react-router-dom";
+import { useGetFlowPermissions } from "@/controllers/API/queries/flows/use-get-flow-permissions";
 
 type DropdownComponentProps = {
   flowData: FlowType;
@@ -29,6 +30,10 @@ const DropdownComponent = ({
   const currentUserId = userData?.id;
   const userLevel = userData?.user_level;
 
+  // Get flow permissions
+  const { data: flowPermissions } = useGetFlowPermissions(flowData.id);
+  const canEdit = flowPermissions?.can_edit || flowData.user_id === currentUserId;
+
   // Get project users to check permissions if we're in a project folder
   const { data: projectUsersData } = useGetProjectUsers(folderId || "");
 
@@ -39,6 +44,13 @@ const DropdownComponent = ({
     ));
 
   const duplicateFlow = () => {
+    if (!canEdit) {
+      setErrorData({
+        title: "Permission denied",
+        list: ["You don't have permission to duplicate this flow"],
+      });
+      return;
+    }
     handleDuplicate().then(() =>
       setSuccessData({
         title: `${flowData.is_component ? "Component" : "Flow"} duplicated successfully`,
@@ -57,21 +69,23 @@ const DropdownComponent = ({
 
   return (
     <>
-      <DropdownMenuItem
-        onClick={(e) => {
-          e.stopPropagation();
-          handleSelectOptionsChange("edit");
-        }}
-        className="cursor-pointer"
-        data-testid="btn-edit-flow"
-      >
-        <ForwardedIconComponent
-          name="SquarePen"
-          aria-hidden="true"
-          className="mr-2 h-4 w-4"
-        />
-        Edit details
-      </DropdownMenuItem>
+      {canEdit && (
+        <DropdownMenuItem
+          onClick={(e) => {
+            e.stopPropagation();
+            handleSelectOptionsChange("edit");
+          }}
+          className="cursor-pointer"
+          data-testid="btn-edit-flow"
+        >
+          <ForwardedIconComponent
+            name="SquarePen"
+            aria-hidden="true"
+            className="mr-2 h-4 w-4"
+          />
+          Edit details
+        </DropdownMenuItem>
+      )}
       <DropdownMenuItem
         onClick={(e) => {
           e.stopPropagation();
@@ -87,21 +101,23 @@ const DropdownComponent = ({
         />
         Export
       </DropdownMenuItem>
-      <DropdownMenuItem
-        onClick={(e) => {
-          e.stopPropagation();
-          handleSelectOptionsChange("duplicate");
-        }}
-        className="cursor-pointer"
-        data-testid="btn-duplicate-flow"
-      >
-        <ForwardedIconComponent
-          name="CopyPlus"
-          aria-hidden="true"
-          className="mr-2 h-4 w-4"
-        />
-        Duplicate
-      </DropdownMenuItem>
+      {canEdit && (
+        <DropdownMenuItem
+          onClick={(e) => {
+            e.stopPropagation();
+            handleSelectOptionsChange("duplicate");
+          }}
+          className="cursor-pointer"
+          data-testid="btn-duplicate-flow"
+        >
+          <ForwardedIconComponent
+            name="CopyPlus"
+            aria-hidden="true"
+            className="mr-2 h-4 w-4"
+          />
+          Duplicate
+        </DropdownMenuItem>
+      )}
       {canDelete && (
         <DropdownMenuItem
           onClick={(e) => {

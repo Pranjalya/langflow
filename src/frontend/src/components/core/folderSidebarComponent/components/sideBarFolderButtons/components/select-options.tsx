@@ -82,7 +82,7 @@ export const SelectOptions = ({
           </SelectTrigger>
         </ShadTooltip>
         <SelectContent align="end" alignOffset={-16} position="popper">
-          {item.name !== DEFAULT_FOLDER_DEPRECATED && (
+          {item.name !== DEFAULT_FOLDER_DEPRECATED && canEditDetails && (
             <SelectItem
               id="rename-button"
               value="rename"
