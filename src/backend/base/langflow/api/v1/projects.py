@@ -602,42 +602,44 @@ async def update_project_user_permissions(
             if permissions.is_project_admin is not None:
                 permission.permission_level = PermissionLevel.PROJECT_ADMIN if permissions.is_project_admin else PermissionLevel.USER
 
-        # If user is being made a PROJECT_ADMIN, update all flow permissions
-        if permissions.is_project_admin:
-            # Get all flows in the project
-            flows = await session.exec(
-                select(Flow).where(Flow.folder_id == project_id)
-            )
-            
-            # Update or create permissions for each flow
-            for flow in flows:
-                flow_permission = (await session.exec(
-                    select(ResourcePermission).where(
-                        ResourcePermission.resource_id == flow.id,
-                        ResourcePermission.grantee_id == user_id,
-                        ResourcePermission.resource_type == 'flow'
-                    )
-                )).first()
+        # Get all flows in the project
+        flows = await session.exec(
+            select(Flow).where(Flow.folder_id == project_id)
+        )
+        
+        # Update or create permissions for each flow
+        for flow in flows:
+            flow_permission = (await session.exec(
+                select(ResourcePermission).where(
+                    ResourcePermission.resource_id == flow.id,
+                    ResourcePermission.grantee_id == user_id,
+                    ResourcePermission.resource_type == 'flow'
+                )
+            )).first()
 
-                if not flow_permission:
-                    # Create new flow permission
-                    flow_permission = ResourcePermission(
-                        resource_id=flow.id,
-                        grantor_id=current_user.id,
-                        grantee_id=user_id,
-                        resource_type='flow',
-                        permission_level=PermissionLevel.PROJECT_ADMIN,
-                        can_read=True,
-                        can_run=True,
-                        can_edit=True
-                    )
-                    session.add(flow_permission)
-                else:
-                    # Update existing flow permission
-                    flow_permission.permission_level = PermissionLevel.PROJECT_ADMIN
-                    flow_permission.can_read = True
-                    flow_permission.can_run = True
-                    flow_permission.can_edit = True
+            if not flow_permission:
+                # Create new flow permission
+                flow_permission = ResourcePermission(
+                    resource_id=flow.id,
+                    grantor_id=current_user.id,
+                    grantee_id=user_id,
+                    resource_type='flow',
+                    permission_level=PermissionLevel.PROJECT_ADMIN if permissions.is_project_admin else PermissionLevel.USER,
+                    can_read=permissions.can_read or False,
+                    can_run=permissions.can_run or False,
+                    can_edit=permissions.can_edit or False
+                )
+                session.add(flow_permission)
+            else:
+                # Update existing flow permission
+                if permissions.can_read is not None:
+                    flow_permission.can_read = permissions.can_read
+                if permissions.can_run is not None:
+                    flow_permission.can_run = permissions.can_run
+                if permissions.can_edit is not None:
+                    flow_permission.can_edit = permissions.can_edit
+                if permissions.is_project_admin is not None:
+                    flow_permission.permission_level = PermissionLevel.PROJECT_ADMIN if permissions.is_project_admin else PermissionLevel.USER
 
         await session.commit()
         await session.refresh(permission)
@@ -700,6 +702,25 @@ async def remove_project_user(
         if project.user_id == user_id:
             raise HTTPException(status_code=400, detail="Cannot remove project owner")
 
+        # Get all flows in the project
+        flows = await session.exec(
+            select(Flow).where(Flow.folder_id == project_id)
+        )
+        
+        # Remove permissions for each flow
+        for flow in flows:
+            flow_permission = (await session.exec(
+                select(ResourcePermission).where(
+                    ResourcePermission.resource_id == flow.id,
+                    ResourcePermission.grantee_id == user_id,
+                    ResourcePermission.resource_type == 'flow'
+                )
+            )).first()
+
+            if flow_permission:
+                await session.delete(flow_permission)
+
+        # Remove project permission
         await session.delete(permission)
         await session.commit()
 

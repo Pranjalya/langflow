@@ -24,8 +24,9 @@ const useSaveFlow = () => {
   const saveFlow = async (flow?: FlowType): Promise<void> => {
     const currentFlow = useFlowStore.getState().currentFlow;
     const currentSavedFlow = useFlowsManagerStore.getState().currentFlow;
+    const flowToSave = flow || currentFlow;
 
-    if (!currentFlow) {
+    if (!flowToSave) {
       setErrorData({
         title: "Failed to save flow",
         list: ["Flow not found"],
@@ -35,16 +36,16 @@ const useSaveFlow = () => {
 
     // Fetch flow permissions
     try {
-      const permissions = await getFlowPermissions(currentFlow.id);
+      const permissions = await getFlowPermissions(flowToSave.id);
       console.log('Flow Permissions:', permissions);
 
       // Check if flow is locked by someone else
-      const isLockedByCurrentUser = currentFlow.locked && currentFlow.locked_by === currentUserId;
-      const isLockedByOther = currentFlow.locked && !isLockedByCurrentUser;
+      const isLockedByCurrentUser = flowToSave.locked && flowToSave.locked_by === currentUserId;
+      const isLockedByOther = flowToSave.locked && !isLockedByCurrentUser;
 
       console.log('Lock Status:', {
-        isLocked: currentFlow.locked,
-        lockedBy: currentFlow.locked_by,
+        isLocked: flowToSave.locked,
+        lockedBy: flowToSave.locked_by,
         currentUserId,
         isLockedByCurrentUser,
         isLockedByOther,
@@ -70,110 +71,101 @@ const useSaveFlow = () => {
       }
 
       if (
-        customStringify(flow || currentFlow) !== customStringify(currentSavedFlow)
+        customStringify(flowToSave) !== customStringify(currentSavedFlow)
       ) {
         setSaveLoading(true);
 
-        const flowData = currentFlow?.data;
+        const flowData = flowToSave?.data;
         const nodes = useFlowStore.getState().nodes;
         const edges = useFlowStore.getState().edges;
         const reactFlowInstance = useFlowStore.getState().reactFlowInstance;
 
         return new Promise<void>((resolve, reject) => {
-          if (currentFlow) {
-            flow = flow || {
-              ...currentFlow,
-              data: {
-                ...flowData,
-                nodes,
-                edges,
-                viewport: reactFlowInstance?.getViewport() ?? {
-                  zoom: 1,
-                  x: 0,
-                  y: 0,
+          const flowWithData = {
+            ...flowToSave,
+            data: {
+              ...flowData,
+              nodes,
+              edges,
+              viewport: reactFlowInstance?.getViewport() ?? {
+                zoom: 1,
+                x: 0,
+                y: 0,
+              },
+            },
+          };
+
+          if (!flowWithData?.data) {
+            getFlow(
+              { id: flowWithData.id },
+              {
+                onSuccess: (flowResponse) => {
+                  flowWithData.data = flowResponse.data as ReactFlowJsonObject<
+                    AllNodeType,
+                    EdgeType
+                  >;
                 },
               },
-            };
+            );
           }
 
-          if (flow) {
-            if (!flow?.data) {
-              getFlow(
-                { id: flow!.id },
-                {
-                  onSuccess: (flowResponse) => {
-                    flow!.data = flowResponse.data as ReactFlowJsonObject<
-                      AllNodeType,
-                      EdgeType
-                    >;
-                  },
-                },
-              );
-            }
+          const {
+            id,
+            name,
+            data,
+            description,
+            folder_id,
+            endpoint_name,
+            locked,
+          } = flowWithData;
 
-            const {
-              id,
-              name,
-              data,
-              description,
-              folder_id,
-              endpoint_name,
-              locked,
-            } = flow;
-            if (!currentSavedFlow?.data?.nodes.length || data!.nodes.length > 0) {
-              mutate(
-                {
-                  id,
-                  name,
-                  data: data!,
-                  description,
-                  folder_id,
-                  endpoint_name,
-                  locked,
-                },
-                {
-                  onSuccess: (updatedFlow) => {
-                    const flows = useFlowsManagerStore.getState().flows;
-                    setSaveLoading(false);
-                    if (flows) {
-                      // updates flow in state
-                      setFlows(
-                        flows.map((flow) => {
-                          if (flow.id === updatedFlow.id) {
-                            return updatedFlow;
-                          }
-                          return flow;
-                        }),
-                      );
-                      setCurrentFlow(updatedFlow);
-                      resolve();
-                    } else {
-                      setErrorData({
-                        title: "Failed to save flow",
-                        list: ["Flows variable undefined"],
-                      });
-                      reject(new Error("Flows variable undefined"));
-                    }
-                  },
-                  onError: (e) => {
+          if (!currentSavedFlow?.data?.nodes.length || data!.nodes.length > 0) {
+            mutate(
+              {
+                id,
+                name,
+                data: data!,
+                description,
+                folder_id,
+                endpoint_name,
+                locked,
+              },
+              {
+                onSuccess: (updatedFlow) => {
+                  const flows = useFlowsManagerStore.getState().flows;
+                  setSaveLoading(false);
+                  if (flows) {
+                    // updates flow in state
+                    setFlows(
+                      flows.map((flow) => {
+                        if (flow.id === updatedFlow.id) {
+                          return updatedFlow;
+                        }
+                        return flow;
+                      }),
+                    );
+                    setCurrentFlow(updatedFlow);
+                    resolve();
+                  } else {
                     setErrorData({
                       title: "Failed to save flow",
-                      list: [e.message],
+                      list: ["Flows variable undefined"],
                     });
-                    setSaveLoading(false);
-                    reject(e);
-                  },
+                    reject(new Error("Flows variable undefined"));
+                  }
                 },
-              );
-            } else {
-              setSaveLoading(false);
-            }
+                onError: (e) => {
+                  setErrorData({
+                    title: "Failed to save flow",
+                    list: [e.message],
+                  });
+                  setSaveLoading(false);
+                  reject(e);
+                },
+              },
+            );
           } else {
-            setErrorData({
-              title: "Failed to save flow",
-              list: ["Flow not found"],
-            });
-            reject(new Error("Flow not found"));
+            setSaveLoading(false);
           }
         });
       }
