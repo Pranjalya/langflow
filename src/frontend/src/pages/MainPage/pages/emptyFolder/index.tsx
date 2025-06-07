@@ -1,6 +1,10 @@
 import ForwardedIconComponent from "@/components/common/genericIconComponent";
 import { Button } from "@/components/ui/button";
 import { useFolderStore } from "@/stores/foldersStore";
+import { useParams } from "react-router-dom";
+import { useGetProjectPermissions } from "@/controllers/API/queries/projects/use-get-project-permissions";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { useState } from "react";
 
 type EmptyFolderProps = {
   setOpenModal: (open: boolean) => void;
@@ -8,6 +12,20 @@ type EmptyFolderProps = {
 
 export const EmptyFolder = ({ setOpenModal }: EmptyFolderProps) => {
   const folders = useFolderStore((state) => state.folders);
+  const { folderId } = useParams();
+  const { data: projectPermissions } = useGetProjectPermissions(folderId || "");
+  const [showPermissionModal, setShowPermissionModal] = useState(false);
+
+  const handleNewFlowClick = () => {
+    if (folderId) {
+      // Check if user has edit permission
+      if (!projectPermissions?.can_edit) {
+        setShowPermissionModal(true);
+        return;
+      }
+    }
+    setOpenModal(true);
+  };
 
   return (
     <div className="m-0 flex w-full justify-center">
@@ -23,7 +41,7 @@ export const EmptyFolder = ({ setOpenModal }: EmptyFolderProps) => {
         </p>
         <Button
           variant="default"
-          onClick={() => setOpenModal(true)}
+          onClick={handleNewFlowClick}
           id="new-project-btn"
         >
           <ForwardedIconComponent
@@ -34,6 +52,21 @@ export const EmptyFolder = ({ setOpenModal }: EmptyFolderProps) => {
           <span className="whitespace-nowrap font-semibold">New Flow</span>
         </Button>
       </div>
+
+      {/* Permission Modal */}
+      <Dialog open={showPermissionModal} onOpenChange={setShowPermissionModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Permission Required</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p>You do not have the necessary permissions to create a new flow in this project.</p>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setShowPermissionModal(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

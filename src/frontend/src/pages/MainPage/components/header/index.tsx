@@ -15,7 +15,9 @@ import useAlertStore from "@/stores/alertStore";
 import { cn } from "@/utils/utils";
 import { debounce } from "lodash";
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
+import { useGetProjectPermissions } from "@/controllers/API/queries/projects/use-get-project-permissions";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
 interface HeaderComponentProps {
   flowType: "flows" | "components" | "mcp";
@@ -43,6 +45,10 @@ const HeaderComponent = ({
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const isMCPEnabled = ENABLE_MCP;
   const setSuccessData = useAlertStore((state) => state.setSuccessData);
+  const { folderId } = useParams();
+  const { data: projectPermissions } = useGetProjectPermissions(folderId || "");
+  const [showPermissionModal, setShowPermissionModal] = useState(false);
+
   // Debounce the setSearch function from the parent
   const debouncedSetSearch = useCallback(
     debounce((value: string) => {
@@ -94,6 +100,17 @@ const HeaderComponent = ({
         },
       },
     );
+  };
+
+  const handleNewFlowClick = () => {
+    if (folderId) {
+      // Check if user has edit permission
+      if (!projectPermissions?.can_edit) {
+        setShowPermissionModal(true);
+        return;
+      }
+    }
+    setNewProjectModal(true);
   };
 
   return (
@@ -232,7 +249,7 @@ const HeaderComponent = ({
                     variant="default"
                     size="iconMd"
                     className="z-50 px-2.5 !text-mmd"
-                    onClick={() => setNewProjectModal(true)}
+                    onClick={handleNewFlowClick}
                     id="new-project-btn"
                     data-testid="new-project-btn"
                   >
@@ -251,6 +268,21 @@ const HeaderComponent = ({
           )}
         </>
       )}
+
+      {/* Permission Modal */}
+      <Dialog open={showPermissionModal} onOpenChange={setShowPermissionModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Permission Required</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p>You do not have the necessary permissions to create a new flow in this project.</p>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setShowPermissionModal(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 };
