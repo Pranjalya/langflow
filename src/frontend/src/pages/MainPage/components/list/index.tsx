@@ -24,7 +24,7 @@ import useDescriptionModal from "../../hooks/use-description-modal";
 import { useGetTemplateStyle } from "../../utils/get-template-style";
 import { timeElapsed } from "../../utils/time-elapse";
 import DropdownComponent from "../dropdown";
-import { useGetFlow } from "@/controllers/API/queries/flows/use-get-flow";
+import { getFlowPermissions } from "@/controllers/API/flows";
 
 const ListComponent = ({
   flowData,
@@ -46,7 +46,7 @@ const ListComponent = ({
   const [openSettings, setOpenSettings] = useState(false);
   const [openExportModal, setOpenExportModal] = useState(false);
   const isComponent = flowData.is_component ?? false;
-  const { mutateAsync: getFlow } = useGetFlow();
+  const [isCheckingPermissions, setIsCheckingPermissions] = useState(false);
 
   const { getIcon } = useGetTemplateStyle(flowData);
 
@@ -57,31 +57,26 @@ const ListComponent = ({
       setSelected(!selected);
     } else {
       if (!isComponent) {
+        if (isCheckingPermissions) return;
+        
+        setIsCheckingPermissions(true);
         try {
-          // Check permissions before navigating
-          const flow = await getFlow({ id: flowData.id });
-          const hasPermission = flow.permissions?.can_read || flow.user_id === flow.current_user_id;
-          console.log(flow.permissions, flow.user_id, flow.current_user_id);
-          if (hasPermission) {
-            navigate(editFlowLink);
-          } else {
+          const permissions = await getFlowPermissions(flowData.id);
+          if (!permissions.can_read) {
             setErrorData({
               title: "Access Denied",
               list: ["You don't have permission to view this flow"],
             });
+            return;
           }
-        } catch (error: any) {
-          if (error.response?.status === 403) {
-            setErrorData({
-              title: "Access Denied",
-              list: ["You don't have permission to view this flow"],
-            });
-          } else {
-            setErrorData({
-              title: "Error",
-              list: ["Failed to load flow. Please try again."],
-            });
-          }
+          navigate(editFlowLink);
+        } catch (error) {
+          setErrorData({
+            title: "Error",
+            list: ["Failed to check flow permissions. Please try again."],
+          });
+        } finally {
+          setIsCheckingPermissions(false);
         }
       }
     }
@@ -249,16 +244,20 @@ const ListComponent = ({
           note={!flowData.is_component ? "and its message history" : ""}
         />
       )}
-      <ExportModal
-        open={openExportModal}
-        setOpen={setOpenExportModal}
-        flowData={flowData}
-      />
-      <FlowSettingsModal
-        open={openSettings}
-        setOpen={setOpenSettings}
-        flowData={flowData}
-      />
+      {openSettings && (
+        <FlowSettingsModal
+          open={openSettings}
+          setOpen={setOpenSettings}
+          flowData={flowData}
+        />
+      )}
+      {openExportModal && (
+        <ExportModal
+          open={openExportModal}
+          setOpen={setOpenExportModal}
+          flowData={flowData}
+        />
+      )}
     </>
   );
 };
