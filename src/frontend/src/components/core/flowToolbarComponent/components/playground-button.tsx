@@ -3,6 +3,10 @@ import ShadTooltip from "@/components/common/shadTooltipComponent";
 import { PLAYGROUND_BUTTON_NAME } from "@/constants/constants";
 import { CustomIOModal } from "@/customization/components/custom-new-modal";
 import { ENABLE_PUBLISH } from "@/customization/feature-flags";
+import { getFlowPermissions } from "@/controllers/API/flows";
+import useAlertStore from "@/stores/alertStore";
+import useFlowsManagerStore from "@/stores/flowsManagerStore";
+import { useState } from "react";
 
 interface PlaygroundButtonProps {
   hasIO: boolean;
@@ -49,10 +53,46 @@ const PlaygroundButton = ({
   setOpen,
   canvasOpen,
 }: PlaygroundButtonProps) => {
+  const { setErrorData } = useAlertStore();
+  const { currentFlow } = useFlowsManagerStore();
+  const [isCheckingPermissions, setIsCheckingPermissions] = useState(false);
+
+  const handlePlaygroundClick = async () => {
+    if (!currentFlow?.id || isCheckingPermissions) return;
+
+    setIsCheckingPermissions(true);
+    try {
+      const permissions = await getFlowPermissions(currentFlow.id);
+      if (!permissions.can_run) {
+        setErrorData({
+          title: "Access Denied",
+          list: ["You don't have run access to this flow."],
+        });
+        return;
+      }
+      setOpen(true);
+    } catch (error) {
+      setErrorData({
+        title: "Error",
+        list: ["Failed to check flow permissions."],
+      });
+    } finally {
+      setIsCheckingPermissions(false);
+    }
+  };
+
+  const handleModalOpen = (newOpen: boolean) => {
+    if (newOpen) {
+      handlePlaygroundClick();
+    } else {
+      setOpen(false);
+    }
+  };
+
   return hasIO ? (
     <CustomIOModal
       open={open}
-      setOpen={setOpen}
+      setOpen={handleModalOpen}
       disable={!hasIO}
       canvasOpen={canvasOpen}
     >

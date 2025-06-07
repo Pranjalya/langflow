@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { getFlowPermissions } from "../flows";
+import { getFlowPermissions } from "@/controllers/API/flows";
 
 export const useGetFlowPermissions = (flowId: string) => {
   return useQuery({
