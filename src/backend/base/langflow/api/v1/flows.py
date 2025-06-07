@@ -962,7 +962,7 @@ async def update_flow_user_permissions(
         project_permission = await get_resource_permission(
             session=session,
             resource_id=flow_permission.resource_id,
-            resource_type=ResourceType.PROJECT,
+            resource_type=ResourceType.FLOW,
             grantee_id=current_user.id,
         )
         if not project_permission or project_permission.permission_level != PermissionLevel.PROJECT_ADMIN:
