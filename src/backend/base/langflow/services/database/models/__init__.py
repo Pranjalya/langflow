@@ -6,6 +6,7 @@ from .message import MessageTable
 from .transactions import TransactionTable
 from .user import User
 from .variable import Variable
+from .paused_flow.model import PausedFlow
 
 __all__ = [
     "ApiKey",
@@ -16,4 +17,5 @@ __all__ = [
     "TransactionTable",
     "User",
     "Variable",
+    "PausedFlow"
 ]

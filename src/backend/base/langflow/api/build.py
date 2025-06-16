@@ -9,6 +9,10 @@ from fastapi import BackgroundTasks, HTTPException, Response
 from loguru import logger
 from sqlmodel import select
 
+import orjson
+from langflow.components.logic.exceptions import HumanInputRequiredError
+from langflow.services.database.models.paused_flow.model import PausedFlow
+
 from langflow.api.disconnect import DisconnectHandlerStreamingResponse
 from langflow.api.utils import (
     CurrentActiveUser,
@@ -51,6 +55,9 @@ async def start_flow_build(
     current_user: CurrentActiveUser,
     queue_service: JobQueueService,
     flow_name: str | None = None,
+    resume_graph: Graph | None = None,
+    is_resume: bool = False,
+
 ) -> str:
     """Start the flow build process by setting up the queue and starting the build task.
 
@@ -72,6 +79,8 @@ async def start_flow_build(
             log_builds=log_builds,
             current_user=current_user,
             flow_name=flow_name,
+            resume_graph=resume_graph,
+            is_resume=is_resume,
         )
         queue_service.start_job(job_id, task_coro)
     except Exception as e:
@@ -191,6 +200,8 @@ async def generate_flow_events(
     log_builds: bool,
     current_user: CurrentActiveUser,
     flow_name: str | None = None,
+    resume_graph: Graph | None = None,
+    is_resume: bool = False,
 ) -> None:
     """Generate events for flow building process.
 
@@ -209,24 +220,28 @@ async def generate_flow_events(
         components_count = 0
         graph = None
         try:
-            flow_id_str = str(flow_id)
-            # Create a fresh session for database operations
-            async with session_scope() as fresh_session:
-                graph = await create_graph(fresh_session, flow_id_str, flow_name)
+            # If resuming, use the provided graph
+            if is_resume and resume_graph:
+                graph = resume_graph
+                # The graph is already prepared, we just need to get the next layer
+                # The start_component_id will be the HITL component
+                first_layer = graph.sort_vertices(start_component_id=start_component_id)
+            else:
+                # Normal build process
+                flow_id_str = str(flow_id)
+                async with session_scope() as fresh_session:
+                    graph = await create_graph(fresh_session, flow_id_str, flow_name)
 
-            graph.validate_stream()
-            first_layer = sort_vertices(graph)
+                graph.validate_stream()
+                first_layer = sort_vertices(graph)
 
             for vertex_id in first_layer:
                 graph.run_manager.add_to_vertices_being_run(vertex_id)
 
-            # Now vertices is a list of lists
-            # We need to get the id of each vertex
-            # and return the same structure but only with the ids
             components_count = len(graph.vertices)
             vertices_to_run = list(graph.vertices_to_run.union(get_top_level_vertices(graph, graph.vertices_to_run)))
 
-            await chat_service.set_cache(flow_id_str, graph)
+            await chat_service.set_cache(str(graph.run_id), graph) # Use run_id as cache key
             await log_telemetry(start_time, components_count, success=True)
 
         except Exception as exc:
@@ -294,7 +309,7 @@ async def generate_flow_events(
         try:
             vertex = graph.get_vertex(vertex_id)
             try:
-                lock = chat_service.async_cache_locks[flow_id_str]
+                lock = chat_service.async_cache_locks[str(graph.run_id)]
                 vertex_build_result = await graph.build_vertex(
                     vertex_id=vertex_id,
                     user_id=str(current_user.id),
@@ -312,6 +327,29 @@ async def generate_flow_events(
                 top_level_vertices = graph.get_top_level_vertices(next_runnable_vertices)
 
                 result_data_response = ResultDataResponse.model_validate(result_dict, from_attributes=True)
+            except HumanInputRequiredError as e:
+                # 1. Serialize the graph state
+                graph_state_json = orjson.loads(graph.model_dump_json())
+
+                # 2. Save the state to the new `paused_flow` table
+                async with session_scope() as session:
+                    paused_flow = PausedFlow(
+                        run_id=str(graph.run_id),
+                        flow_id=graph.flow_id,
+                        user_id=current_user.id,
+                        graph_state=graph_state_json,
+                        hitl_component_id=e.component_id,
+                        question=e.question,
+                    )
+                    session.add(paused_flow)
+                    await session.commit()
+
+                # 3. Send a special event to the frontend
+                event_manager.on_human_input_request(data={"question": e.question, "run_id": str(graph.run_id)})
+
+                # 4. Stop further execution by raising a specific exception that will be caught
+                # in the main loop and will stop the processing of the graph.
+                raise
             except Exception as exc:  # noqa: BLE001
                 if isinstance(exc, ComponentBuildError):
                     params = exc.message
@@ -456,6 +494,15 @@ async def generate_flow_events(
         tasks.append(task)
     try:
         await asyncio.gather(*tasks)
+    except HumanInputRequiredError:
+        # This is expected when pausing. We just need to stop the execution gracefully.
+        logger.info(f"Flow run {graph.run_id} paused for human input.")
+        # Cancel any remaining tasks
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        # The flow will be resumed via the /resume endpoint
+        return
     except asyncio.CancelledError:
         background_tasks.add_task(graph.end_all_traces_in_context())
         raise

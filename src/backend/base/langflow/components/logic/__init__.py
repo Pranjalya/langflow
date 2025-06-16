@@ -5,6 +5,7 @@ from .loop import LoopComponent
 from .pass_message import PassMessageComponent
 from .run_flow import RunFlowComponent
 from .sub_flow import SubFlowComponent
+from .human_in_the_loop import HumanInLoopComponent
 
 __all__ = [
     "ConditionalRouterComponent",
@@ -14,4 +15,5 @@ __all__ = [
     "PassMessageComponent",
     "RunFlowComponent",
     "SubFlowComponent",
+    "HumanInLoopComponent"
 ]
